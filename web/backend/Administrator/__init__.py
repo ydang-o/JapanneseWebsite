@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from ..auth import require_admin
 from ..extensions import db
 from ..models import User, PointTransaction
+from ..db_init import ensure_database_initialized
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -32,8 +33,5 @@ def adjust_points():
 @admin_bp.post("/init-db")
 @require_admin
 def init_db():
-    from ..extensions import db as database
-    from ..models import User, PointTransaction  # noqa: F401 ensure tables import
-
-    database.create_all()
-    return jsonify({"message": "DB 初期化完了"}) 
+    result = ensure_database_initialized(db.get_app())  # type: ignore
+    return jsonify({"message": "DB 初期化完了", "result": result}) 

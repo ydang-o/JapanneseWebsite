@@ -19,7 +19,10 @@ __pycache__/
 .idea/
 .DS_Store
 
-# Cache / Coverage
+# Coverage / Cache
 coverage/
 .pytest_cache/
 .coverage
+
+# Local sqlite DB
+/dev.db

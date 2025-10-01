@@ -2,6 +2,7 @@ from flask import Flask
 from flask_cors import CORS
 from .config import AppConfig
 from .extensions import db, redis_client
+from .db_init import ensure_database_initialized
 
 
 def create_app() -> Flask:
@@ -11,6 +12,14 @@ def create_app() -> Flask:
     # Initialize extensions
     CORS(app, resources={r"/api/*": {"origins": "*"}})
     db.init_app(app)
+
+    # Auto DB init
+    with app.app_context():
+        try:
+            ensure_database_initialized(app)
+        except Exception:
+            # Do not crash app startup; errors will surface via endpoints
+            pass
 
     # Lazily initialize Redis to avoid failure at import time
     @app.before_request
