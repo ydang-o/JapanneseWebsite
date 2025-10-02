@@ -2,7 +2,10 @@
   <div class="container">
     <header class="header">
       <nav class="nav">
-        <router-link class="brand" to="/">代購サイト</router-link>
+        <router-link class="brand" to="/">
+          <img src="/logo.png" alt="logo" class="logo" />
+          <span style="margin-left:8px">代購サイト</span>
+        </router-link>
         <div class="links">
           <router-link to="/" class="link">ホーム</router-link>
           <router-link to="/login" class="link">ログイン</router-link>
@@ -26,7 +29,8 @@
 .container { max-width: 960px; margin: 0 auto; padding: 16px; }
 .header { padding: 12px 0; }
 .nav { display: flex; justify-content: space-between; align-items: center; }
-.brand { font-weight: 700; color: #222; text-decoration: none; }
+.brand { display:flex; align-items:center; font-weight: 700; color: #222; text-decoration: none; }
+.logo { width: 28px; height: 28px; object-fit: contain; }
 .links { display: flex; gap: 12px; }
 .link { color: #333; text-decoration: none; }
 .link:hover { text-decoration: underline; }
