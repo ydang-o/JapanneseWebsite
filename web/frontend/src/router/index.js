@@ -11,8 +11,28 @@ export const router = createRouter({
     { path: '/', component: Home, alias: ['/home'] },
     { path: '/login', component: Login },
     { path: '/register', component: Register },
-    { path: '/user', component: User },
-    { path: '/admin', component: Admin, alias: ['/Administrator', '/Administer'] },
+    { path: '/user', component: User, meta: { requiresAuth: true } },
+    { path: '/admin', component: Admin, alias: ['/Administrator', '/Administer'], meta: { requiresAuth: true, requiresAdmin: true } },
     { path: '/:pathMatch(.*)*', redirect: '/' },
   ],
+})
+
+router.beforeEach((to, from, next) => {
+  const token = localStorage.getItem('token') || ''
+  const role = localStorage.getItem('userRole') || ''
+  if (to.meta?.requiresAuth && !token) {
+    try {
+      localStorage.setItem('authPrompt', 'login-required')
+      localStorage.setItem('redirectPath', to.fullPath)
+    } catch {}
+    return next('/login')
+  }
+  if (to.meta?.requiresAdmin && role !== 'admin') {
+    try {
+      localStorage.setItem('authPrompt', 'admin-required')
+      localStorage.setItem('redirectPath', to.fullPath)
+    } catch {}
+    return next('/login')
+  }
+  return next()
 }) 

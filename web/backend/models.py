@@ -12,6 +12,7 @@ class User(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     points_balance = db.Column(db.Integer, nullable=False, default=0)
+    status = db.Column(db.String(16), nullable=False, default="pending")  # pending/approved/rejected
 
 
 class PointTransaction(db.Model):

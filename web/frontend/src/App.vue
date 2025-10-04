@@ -11,7 +11,8 @@
           <router-link to="/login" class="link">ログイン</router-link>
           <router-link to="/register" class="link">新規登録</router-link>
           <router-link to="/user" class="link">マイページ</router-link>
-          <router-link to="/admin" class="link">管理</router-link>
+          <router-link v-if="userRole==='admin'" to="/admin" class="link">管理</router-link>
+          <a v-if="isLoggedIn" class="link" href="#" @click.prevent="logout">ログアウト</a>
         </div>
       </nav>
     </header>
@@ -23,6 +24,23 @@
 </template>
 
 <script setup>
+import { ref, onMounted, computed } from 'vue'
+
+const userRole = ref('')
+const isLoggedIn = computed(() => !!(localStorage.getItem('token') || ''))
+
+function logout() {
+  try { localStorage.removeItem('token'); localStorage.removeItem('userRole') } catch {}
+  userRole.value = ''
+  location.hash = '#/login'
+}
+
+onMounted(() => {
+  try {
+    const cached = localStorage.getItem('userRole') || ''
+    if (cached) userRole.value = cached
+  } catch {}
+})
 </script>
 
 <style scoped>

@@ -14,15 +14,25 @@
       <p v-if="error" class="error">{{ error }}</p>
     </div>
 
+    <div class="card" style="padding:12px; margin-bottom:16px">
+      <h3>管理者登録（バックエンド作成）</h3>
+      <div class="row">
+        <input v-model="createPhone" type="tel" placeholder="電話番号 (例: 09012345678)" style="max-width:220px" />
+        <input v-model="createName" type="text" placeholder="表示名" style="max-width:200px" />
+        <button @click="createUser" :disabled="loading">作成</button>
+      </div>
+    </div>
+
     <div class="card" style="padding:12px">
       <table style="width:100%; border-collapse: collapse;">
         <thead>
           <tr style="text-align:left; border-bottom: 1px solid var(--border)">
             <th style="padding:8px">ID</th>
-            <th style="padding:8px">メール</th>
+            <th style="padding:8px">電話</th>
             <th style="padding:8px">表示名</th>
             <th style="padding:8px">ポイント</th>
-            <th style="padding:8px; width:220px">操作</th>
+            <th style="padding:8px">ステータス</th>
+            <th style="padding:8px; width:320px">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -31,9 +41,12 @@
             <td style="padding:8px">{{ u.email }}</td>
             <td style="padding:8px">{{ u.displayName }}</td>
             <td style="padding:8px"><strong>{{ u.points }}</strong></td>
+            <td style="padding:8px">{{ u.status }}</td>
             <td style="padding:8px">
               <input v-model.number="rowDelta[u.id]" type="number" placeholder="±ポイント" style="width:100px; margin-right:8px" />
-              <button @click="adjustRow(u)" :disabled="loading">反映</button>
+              <button @click="adjustRow(u)" :disabled="loading" style="margin-right:8px">反映</button>
+              <button @click="approve(u)" :disabled="loading" style="margin-right:8px">承認</button>
+              <button @click="reject(u)" :disabled="loading" style="background:#a00">却下</button>
             </td>
           </tr>
         </tbody>
@@ -61,6 +74,8 @@ const pageSize = ref(20)
 const total = ref(0)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const rowDelta = reactive({})
+const createPhone = ref('')
+const createName = ref('')
 
 async function fetchUsers() {
   loading.value = true
@@ -71,6 +86,65 @@ async function fetchUsers() {
     })
     users.value = data.items
     total.value = data.total
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function createUser() {
+  loading.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const res = await apiFetch('/admin/users/create', {
+      method: 'POST',
+      headers: { 'X-ADMIN-KEY': adminKey.value },
+      body: JSON.stringify({ phone: createPhone.value, displayName: createName.value }),
+    })
+    message.value = res.message
+    createPhone.value = ''
+    createName.value = ''
+    await fetchUsers()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function approve(u) {
+  loading.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const res = await apiFetch('/admin/users/approve', {
+      method: 'POST',
+      headers: { 'X-ADMIN-KEY': adminKey.value },
+      body: JSON.stringify({ userId: u.id }),
+    })
+    message.value = res.message
+    await fetchUsers()
+  } catch (e) {
+    error.value = e.message
+  } finally {
+    loading.value = false
+  }
+}
+
+async function reject(u) {
+  loading.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const res = await apiFetch('/admin/users/reject', {
+      method: 'POST',
+      headers: { 'X-ADMIN-KEY': adminKey.value },
+      body: JSON.stringify({ userId: u.id }),
+    })
+    message.value = res.message
+    await fetchUsers()
   } catch (e) {
     error.value = e.message
   } finally {

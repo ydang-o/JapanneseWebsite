@@ -3,6 +3,8 @@ from ..auth import require_admin
 from ..extensions import db
 from ..models import User, PointTransaction
 from ..db_init import ensure_database_initialized
+from werkzeug.security import generate_password_hash
+from ..phone import normalize_jp_phone
 
 admin_bp = Blueprint("admin", __name__)
 
@@ -25,11 +27,60 @@ def list_users():
                 "email": u.email,
                 "displayName": u.display_name,
                 "points": u.points_balance,
+                "status": u.status,
                 "createdAt": (u.created_at.isoformat() if u.created_at else None),
             }
             for u in items
         ],
     })
+
+
+@admin_bp.post("/users/approve")
+@require_admin
+def approve_user():
+    payload = request.get_json(silent=True) or {}
+    user_id = payload.get("userId")
+    if not user_id:
+        return jsonify({"error": "userId を指定してください"}), 400
+    user = db.session.get(User, int(user_id))
+    if not user:
+        return jsonify({"error": "ユーザーが見つかりません"}), 404
+    user.status = "approved"
+    db.session.commit()
+    return jsonify({"message": "承認しました"})
+
+
+@admin_bp.post("/users/reject")
+@require_admin
+def reject_user():
+    payload = request.get_json(silent=True) or {}
+    user_id = payload.get("userId")
+    if not user_id:
+        return jsonify({"error": "userId を指定してください"}), 400
+    user = db.session.get(User, int(user_id))
+    if not user:
+        return jsonify({"error": "ユーザーが見つかりません"}), 404
+    user.status = "rejected"
+    db.session.commit()
+    return jsonify({"message": "却下しました"})
+
+
+@admin_bp.post("/users/create")
+@require_admin
+def create_user():
+    payload = request.get_json(silent=True) or {}
+    raw_phone = (payload.get("phone") or "").strip()
+    phone = normalize_jp_phone(raw_phone)
+    display_name = (payload.get("displayName") or "ユーザー").strip()
+    password = (payload.get("password") or "123456").strip()
+    if not phone:
+        return jsonify({"error": "日本の電話番号の形式が正しくありません"}), 400
+    if User.query.filter_by(email=phone).first():
+        return jsonify({"error": "既に存在します"}), 409
+    user = User(email=phone, display_name=display_name, password_hash=generate_password_hash(password), status="approved")
+    db.session.add(user)
+    db.session.commit()
+    return jsonify({"message": "作成しました", "userId": user.id})
 
 
 @admin_bp.post("/points/adjust")

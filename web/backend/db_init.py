@@ -64,6 +64,7 @@ def _default_schema_sql(dialect: str) -> str:
               `display_name` VARCHAR(255) NOT NULL DEFAULT 'ユーザー',
               `created_at` DATETIME NULL,
               `points_balance` INT NOT NULL DEFAULT 0,
+              `status` VARCHAR(16) NOT NULL DEFAULT 'pending',
               PRIMARY KEY (`id`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -87,7 +88,8 @@ def _default_schema_sql(dialect: str) -> str:
           password_hash TEXT NOT NULL,
           display_name TEXT NOT NULL DEFAULT 'ユーザー',
           created_at DATETIME NULL,
-          points_balance INTEGER NOT NULL DEFAULT 0
+          points_balance INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'pending'
         );
 
         CREATE TABLE IF NOT EXISTS point_transactions (
@@ -110,6 +112,22 @@ def _execute_sql_script(sql_script: str) -> None:
     db.session.commit()
 
 
+def _ensure_columns(inspector) -> Dict[str, Any]:
+    """Ensure newly added columns exist (idempotent)."""
+    results: Dict[str, Any] = {"added_columns": []}
+    # users.status
+    cols = {c["name"] for c in inspector.get_columns("users")}
+    if "status" not in cols:
+        driver = db.engine.url.drivername
+        if driver.startswith("mysql"):
+            db.session.execute(text("ALTER TABLE `users` ADD COLUMN `status` VARCHAR(16) NOT NULL DEFAULT 'pending'"))
+        else:
+            db.session.execute(text("ALTER TABLE users ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'"))
+        db.session.commit()
+        results["added_columns"].append("users.status")
+    return results
+
+
 def ensure_database_initialized(app: Flask) -> Dict[str, Any]:
     """Ensure database and required tables exist. Return summary info.
     Order:
@@ -117,6 +135,7 @@ def ensure_database_initialized(app: Flask) -> Dict[str, Any]:
       2) Check expected tables with inspector
       3) If missing, try SQLAlchemy create_all()
       4) If still missing, execute built-in SQL DDL (or SCHEMA_SQL_PATH if provided)
+      5) Ensure new columns exist (like users.status)
     """
     results: Dict[str, Any] = {"created_database": False, "created_tables": [], "used_fallback_sql": False}
 
@@ -128,6 +147,9 @@ def ensure_database_initialized(app: Flask) -> Dict[str, Any]:
         inspector = inspect(db.engine)
         missing: List[str] = [t for t in _EXPECTED_TABLES if not inspector.has_table(t)]
         if not missing:
+            # Ensure columns
+            col_res = _ensure_columns(inspector)
+            results.update(col_res)
             results["missing_tables"] = []
             results["status"] = "ok"
             return results
@@ -138,6 +160,9 @@ def ensure_database_initialized(app: Flask) -> Dict[str, Any]:
         inspector = inspect(db.engine)
         still_missing: List[str] = [t for t in _EXPECTED_TABLES if not inspector.has_table(t)]
         if not still_missing:
+            # Ensure columns
+            col_res = _ensure_columns(inspector)
+            results.update(col_res)
             results["created_tables"] = missing
             results["missing_tables"] = []
             results["status"] = "created"
@@ -156,6 +181,9 @@ def ensure_database_initialized(app: Flask) -> Dict[str, Any]:
         inspector = inspect(db.engine)
         final_missing: List[str] = [t for t in _EXPECTED_TABLES if not inspector.has_table(t)]
         results["used_fallback_sql"] = True
+        # Ensure columns
+        col_res = _ensure_columns(inspector)
+        results.update(col_res)
         if final_missing:
             results["missing_tables"] = final_missing
             results["status"] = "partial"
