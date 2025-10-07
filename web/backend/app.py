@@ -1,12 +1,15 @@
-from flask import Flask
+import os
+from flask import Flask, send_from_directory
 from flask_cors import CORS
 from .config import AppConfig
 from .extensions import db, redis_client
 from .db_init import ensure_database_initialized
 
+STATIC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../frontend/dist"))
+
 
 def create_app() -> Flask:
-    app = Flask(__name__)
+    app = Flask(__name__, static_folder=STATIC_DIR, static_url_path="/")
     app.config.from_object(AppConfig)
 
     # Initialize extensions
@@ -18,7 +21,6 @@ def create_app() -> Flask:
         try:
             ensure_database_initialized(app)
         except Exception:
-            # Do not crash app startup; errors will surface via endpoints
             pass
 
     # Lazily initialize Redis to avoid failure at import time
@@ -27,7 +29,6 @@ def create_app() -> Flask:
         if not hasattr(app, "redis"):
             app.redis = redis_client(app.config)
 
-    # Register blueprints
     from .login import login_bp
     from .register import register_bp
     from .user import user_bp
@@ -40,9 +41,17 @@ def create_app() -> Flask:
     app.register_blueprint(home_bp, url_prefix="/api/home")
     app.register_blueprint(admin_bp, url_prefix="/api/admin")
 
-    @app.get("/")
-    def root():
-        return "Backend OK. Visit frontend at http://127.0.0.1:5173"
+    @app.route("/")
+    def index():
+        if os.path.exists(os.path.join(STATIC_DIR, "index.html")):
+            return send_from_directory(STATIC_DIR, "index.html")
+        return "Frontend build not found. Run npm run build in web/frontend.", 200
+
+    @app.route("/<path:path>")
+    def static_proxy(path):
+        if os.path.exists(os.path.join(STATIC_DIR, path)):
+            return send_from_directory(STATIC_DIR, path)
+        return send_from_directory(STATIC_DIR, "index.html")
 
     @app.get("/api/health")
     def health_check():
