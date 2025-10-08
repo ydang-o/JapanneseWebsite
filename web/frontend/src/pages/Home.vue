@@ -56,19 +56,26 @@
       <section class="featured-products">
         <h2 class="section-title">おすすめ商品</h2>
         <div class="product-grid">
-          <div class="product-card" v-for="product in featuredProducts" :key="product.id">
+          <a
+            class="product-card"
+            v-for="product in featuredProducts"
+            :key="product.id"
+            :href="product.href"
+            target="_blank"
+            rel="noopener noreferrer"
+          >
             <div class="product-image">
-              <img :src="product.image" :alt="product.name" />
+              <img :src="product.image" :alt="product.imageAlt" loading="lazy" />
             </div>
             <div class="product-info">
-              <h3 class="product-name">{{ product.name }}</h3>
-              <p class="product-price">¥{{ product.price.toLocaleString() }}</p>
+              <h3 class="product-name">{{ product.title }}</h3>
+              <p class="product-price">{{ product.priceText }}</p>
               <div class="product-meta">
-                <span class="product-condition">{{ product.condition }}</span>
-                <span class="product-location">{{ product.location }}</span>
+                <span class="product-status" v-if="product.statusLabel">{{ product.statusLabel }}</span>
+                <span class="product-discount" v-if="product.discount">{{ product.discount }}</span>
               </div>
             </div>
-          </div>
+          </a>
         </div>
       </section>
 
@@ -93,6 +100,7 @@
 
 <script setup>
 import { ref } from 'vue'
+import mercariItems from '@/data/mercariItems.json'
 
 // 模拟分类数据
 const categories = ref([
@@ -106,57 +114,12 @@ const categories = ref([
   { id: 8, name: 'コスメ・香水・美容', icon: 'https://placehold.co/60x60/FF0211/FFFFFF?text=C' }
 ])
 
-// 模拟商品数据
-const featuredProducts = ref([
-  {
-    id: 1,
-    name: 'iPhone 15 Pro Max 256GB ナチュラルチタニウム',
-    price: 120000,
-    condition: '新品・未使用',
-    location: '東京都',
-    image: 'https://placehold.co/400x400/F5F5F5/FF0211?text=iPhone+15'
-  },
-  {
-    id: 2,
-    name: 'ルイ・ヴィトン バッグ モノグラム',
-    price: 85000,
-    condition: '目立った傷や汚れなし',
-    location: '大阪府',
-    image: 'https://placehold.co/400x400/F5F5F5/FF0211?text=LV+Bag'
-  },
-  {
-    id: 3,
-    name: 'Nintendo Switch 本体 ネオンブルー',
-    price: 25000,
-    condition: '目立った傷や汚れなし',
-    location: '神奈川県',
-    image: 'https://placehold.co/400x400/F5F5F5/FF0211?text=Switch'
-  },
-  {
-    id: 4,
-    name: 'シャネル 香水 シャンス',
-    price: 15000,
-    condition: '新品・未使用',
-    location: '愛知県',
-    image: 'https://placehold.co/400x400/F5F5F5/FF0211?text=Chanel'
-  },
-  {
-    id: 5,
-    name: 'MacBook Pro 14インチ M3 チップ',
-    price: 180000,
-    condition: '新品・未使用',
-    location: '東京都',
-    image: 'https://placehold.co/400x400/F5F5F5/FF0211?text=MacBook'
-  },
-  {
-    id: 6,
-    name: 'ユニクロ ダウンジャケット レディース',
-    price: 3500,
-    condition: '目立った傷や汚れなし',
-    location: '福岡県',
-    image: 'https://placehold.co/400x400/F5F5F5/FF0211?text=Coat'
-  }
-])
+const featuredProducts = ref(
+  mercariItems.map((item) => ({
+    ...item,
+    statusLabel: item.status === 'on_sale' ? '販売中' : item.status
+  }))
+)
 </script>
 
 <style scoped>
