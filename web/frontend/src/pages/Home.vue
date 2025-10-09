@@ -1,70 +1,41 @@
 <template>
   <div class="mercari-home">
-    <!-- Header Navigation -->
-    <header class="header">
-      <div class="nav-container">
-        <div class="logo">
-          <svg viewBox="0 0 182 49" width="120" height="32" xmlns="http://www.w3.org/2000/svg">
-            <title>メルカリ</title>
-            <g>
-              <path fill="#ff0211" fill-rule="evenodd" d="M42.65,14.15l0,21a3.55,3.55,0,0,1-2,3.17l-17.8,8.59a3.54,3.54,0,0,1-3.08,0L9.25,41.82a3.55,3.55,0,0,1-2-3.17l0-21a3.55,3.55,0,0,1,2-3.17L27.05,8.59a3.54,3.54,0,0,1,3.08,0L47.93,11a3.55,3.55,0,0,1,2,3.17Z"/>
-              <text x="60" y="25" font-family="Arial, sans-serif" font-size="18" font-weight="bold" fill="#ff0211">メルカリ</text>
-            </g>
-          </svg>
-        </div>
-        <nav class="nav-links">
-          <a href="#/" class="nav-link">ホーム</a>
-          <a v-if="isAdmin" href="#/admin" class="nav-link">管理</a>
-          <a v-if="isLoggedIn" href="#/user" class="nav-link">マイページ</a>
-          <a v-if="!isLoggedIn" href="#/login" class="nav-link">ログイン</a>
-          <a v-if="!isLoggedIn" href="#/register" class="nav-link">新規登録</a>
-          <button v-if="isLoggedIn" class="nav-link nav-button" @click="logout">ログアウト</button>
-        </nav>
-      </div>
-    </header>
-
-    <!-- Main Content -->
     <main class="main-content">
-      <!-- Hero Section -->
       <section class="hero">
         <div class="hero-content">
           <h1 class="hero-title">日本最大のフリマサービス</h1>
           <p class="hero-subtitle">誰でも安心して簡単に売り買いが楽しめる</p>
-          
-          <!-- Search Bar -->
           <div class="search-container">
-            <div class="search-box">
-              <input type="text" placeholder="何をお探しですか？" class="search-input" />
-              <button class="search-btn">検索</button>
-            </div>
+            <form class="search-box" @submit.prevent="searchMercari">
+              <input
+                type="search"
+                placeholder="キーワードを入力"
+                class="search-input"
+                v-model="searchQuery"
+                ref="searchInput"
+              />
+              <button class="search-btn" type="submit">
+                検索
+              </button>
+            </form>
           </div>
+          <p v-if="searchError" class="error">{{ searchError }}</p>
         </div>
       </section>
 
-      <!-- Categories Section -->
-      <section class="categories">
-        <h2 class="section-title">カテゴリから探す</h2>
-        <div class="category-grid">
-          <div class="category-item" v-for="category in categories" :key="category.id">
-            <div class="category-icon">
-              <img :src="category.icon" :alt="category.name" />
-            </div>
-            <span class="category-name">{{ category.name }}</span>
-          </div>
-        </div>
-      </section>
-
-      <!-- Featured Products -->
       <section class="featured-products">
-        <h2 class="section-title">おすすめ商品</h2>
-        <div class="product-grid">
-          <a
+        <div class="section-title-row">
+          <h2 class="section-title">最新の人気商品</h2>
+          <button class="section-action" type="button" @click="refreshItems" :disabled="isLoading">
+            {{ isLoading ? '読み込み中...' : '更新' }}
+          </button>
+        </div>
+        <div class="product-grid" v-if="items.length">
+          <article
             class="product-card"
-            v-for="product in featuredProducts"
+            v-for="product in items"
             :key="product.id"
-            :href="product.href"
-            target="_blank"
-            rel="noopener noreferrer"
+            @click="openProduct(product)"
           >
             <div class="product-image">
               <img :src="product.image" :alt="product.imageAlt" loading="lazy" />
@@ -74,162 +45,176 @@
               <p class="product-price">{{ product.priceText }}</p>
               <div class="product-meta">
                 <span class="product-status" v-if="product.statusLabel">{{ product.statusLabel }}</span>
-                <span class="product-discount" v-if="product.discount">{{ product.discount }}</span>
+                <span class="product-location" v-if="product.location">{{ product.location }}</span>
               </div>
             </div>
-          </a>
+          </article>
         </div>
-      </section>
-
-      <!-- Banner Section -->
-      <section class="banner">
-        <div class="banner-content">
-          <h3>スマホでかんたん出品</h3>
-          <p>写真を撮るだけ！かんたん出品でお得に売買</p>
-          <button class="cta-button">今すぐ始める</button>
-        </div>
+        <p v-else class="empty-message">商品を読み込めませんでした。</p>
       </section>
     </main>
 
-    <!-- Footer -->
     <footer class="footer">
       <div class="footer-content">
-        <p>&copy; 2024 メルカリ - 日本最大のフリマサービス</p>
+        <p>&copy; 2025 代購サイト</p>
       </div>
     </footer>
+
+    <transition name="modal">
+      <div v-if="selectedProduct" class="modal" @click.self="closeProductModal">
+        <div class="modal-content">
+          <button class="modal-close" type="button" @click="closeProductModal">×</button>
+          <div class="modal-body">
+            <div class="modal-image">
+              <img :src="selectedProduct.image" :alt="selectedProduct.imageAlt" />
+            </div>
+            <div class="modal-info">
+              <h3>{{ selectedProduct.title }}</h3>
+              <p class="modal-price">{{ selectedProduct.priceText }}</p>
+              <ul class="modal-meta">
+                <li v-if="selectedProduct.location">発送地: {{ selectedProduct.location }}</li>
+                <li v-if="selectedProduct.statusLabel">状態: {{ selectedProduct.statusLabel }}</li>
+              </ul>
+              <a :href="selectedProduct.href" class="modal-action" target="_blank" rel="noopener">Mercariで見る</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
-import mercariItems from '@/data/mercariItems.json'
-import { getAuthToken, setAuthToken } from '@/api'
+import { ref, onMounted } from 'vue'
+import fallbackItems from '@/data/mercari_items.json'
 
-// 模拟分类数据
-const categories = ref([
-  { id: 1, name: 'レディース', icon: 'https://placehold.co/60x60/FF0211/FFFFFF?text=L' },
-  { id: 2, name: 'メンズ', icon: 'https://placehold.co/60x60/FF0211/FFFFFF?text=M' },
-  { id: 3, name: 'ベビー・キッズ', icon: 'https://placehold.co/60x60/FF0211/FFFFFF?text=BK' },
-  { id: 4, name: 'インテリア・住まい', icon: 'https://placehold.co/60x60/FF0211/FFFFFF?text=IS' },
-  { id: 5, name: 'キッチン・食器', icon: 'https://placehold.co/60x60/FF0211/FFFFFF?text=K' },
-  { id: 6, name: '本・音楽・ゲーム', icon: 'https://placehold.co/60x60/FF0211/FFFFFF?text=BG' },
-  { id: 7, name: 'おもちゃ・ホビー', icon: 'https://placehold.co/60x60/FF0211/FFFFFF?text=H' },
-  { id: 8, name: 'コスメ・香水・美容', icon: 'https://placehold.co/60x60/FF0211/FFFFFF?text=C' }
-])
+const DISPLAY_COUNT = 21
 
-const featuredProducts = ref(
-  mercariItems.map((item) => ({
-    ...item,
-    statusLabel: item.status === 'on_sale' ? '販売中' : item.status
-  }))
-)
+const searchQuery = ref('')
+const searchError = ref('')
+const isLoading = ref(false)
+const items = ref([])
+const selectedProduct = ref(null)
+const searchInput = ref(null)
 
-const isLoggedIn = ref(Boolean(getAuthToken()))
-const userRole = ref('')
-const isAdmin = computed(() => isLoggedIn.value && userRole.value === 'admin')
+function pickRandomItems(list, count) {
+  if (!Array.isArray(list) || list.length <= count) {
+    return list
+  }
+  const shuffled = [...list]
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+  }
+  return shuffled.slice(0, count)
+}
 
-function updateLoginState() {
-  isLoggedIn.value = Boolean(getAuthToken())
+async function refreshItems() {
+  isLoading.value = true
+  searchError.value = ''
+  console.log('[Refresh] Loading items...')
+  
   try {
-    userRole.value = localStorage.getItem('userRole') || ''
-  } catch {
-    userRole.value = ''
+    const resp = await fetch('/api/home/items')
+    console.log('[Refresh] Response status:', resp.status)
+    
+    if (!resp.ok) throw new Error('商品の取得に失敗しました')
+    
+    const data = await resp.json()
+    console.log('[Refresh] Received items:', data.items?.length || 0)
+    
+    const transformed = transformItems(data.items || [])
+    
+    if (!transformed.length) {
+      // 使用本地 fallback 数据
+      console.log('[Refresh] Using fallback items:', fallbackItems.length)
+      const fallbackTransformed = transformItems(fallbackItems)
+      items.value = pickRandomItems(fallbackTransformed, DISPLAY_COUNT)
+    } else {
+      items.value = pickRandomItems(transformed, DISPLAY_COUNT)
+      console.log('[Refresh] Displaying', items.value.length, 'items')
+    }
+  } catch (err) {
+    console.error('[Refresh] Error:', err, '- Using fallback data')
+    // API 失败时使用本地数据
+    const fallbackTransformed = transformItems(fallbackItems)
+    items.value = pickRandomItems(fallbackTransformed, DISPLAY_COUNT)
+  } finally {
+    isLoading.value = false
   }
 }
 
-function handleStorage(event) {
-  if (!event.key || event.key === 'token' || event.key === 'userRole') {
-    updateLoginState()
+function searchMercari() {
+  const keyword = searchQuery.value.trim()
+  if (!keyword) {
+    searchError.value = 'キーワードを入力してください。'
+    return
   }
+  
+  // 直接跳转到 Mercari 搜索页面
+  const mercariSearchUrl = `https://jp.mercari.com/search?keyword=${encodeURIComponent(keyword)}`
+  window.open(mercariSearchUrl, '_blank')
+  
+  // 清空错误信息
+  searchError.value = ''
 }
 
-function logout() {
-  setAuthToken('')
-  try {
-    localStorage.removeItem('userRole')
-    localStorage.removeItem('redirectPath')
-    localStorage.removeItem('authPrompt')
-  } catch {}
-  updateLoginState()
-  location.hash = '#/login'
+function openProduct(product) {
+  selectedProduct.value = product
+}
+
+function closeProductModal() {
+  selectedProduct.value = null
+}
+
+function transformItems(rawItems = []) {
+  return rawItems.map((item) => {
+    const image = item.image?.src || item.image
+    const href = item.link || item.href || ''
+    
+    // 构建完整的 Mercari 商品 URL
+    let absoluteHref = ''
+    if (href.startsWith('http')) {
+      // 已经是完整 URL
+      absoluteHref = href
+    } else if (href.startsWith('/item/')) {
+      // 相对路径，构建完整的 Mercari URL
+      absoluteHref = `https://jp.mercari.com${href}`
+    } else if (item.id) {
+      // 使用商品 ID 构建 URL
+      absoluteHref = `https://jp.mercari.com/item/${item.id}`
+    } else {
+      absoluteHref = 'https://jp.mercari.com'
+    }
+    
+    return {
+      id: item.id || item.m_item_id || item.title,
+      title: item.title || item.image?.title || '商品',
+      priceText: item.priceText || item.price || (item.price && !String(item.price).includes('円') ? `${item.price}円` : ''),
+      statusLabel: item.statusLabel || item.status,
+      location: item.location || item.shippingFrom || '',
+      href: absoluteHref,
+      image,
+      imageAlt: item.image?.alt || item.image?.title || item.title || '商品',
+    }
+  })
 }
 
 onMounted(() => {
-  updateLoginState()
-  window.addEventListener('storage', handleStorage)
-})
-
-onBeforeUnmount(() => {
-  window.removeEventListener('storage', handleStorage)
+  refreshItems()
+  if (searchInput.value) searchInput.value.focus()
 })
 </script>
 
 <style scoped>
 .mercari-home {
   min-height: 100vh;
-  background: #f5f5f5;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Noto Sans JP', 'Hiragino Kaku Gothic ProN', 'Yu Gothic', 'Meiryo', sans-serif;
+  background: var(--bg);
 }
 
-/* Header Styles */
-.header {
-  background: #fff;
-  border-bottom: 1px solid #e5e7eb;
-  position: sticky;
-  top: 0;
-  z-index: 100;
-}
-
-.nav-container {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 64px;
-}
-
-.logo {
-  display: flex;
-  align-items: center;
-}
-
-.nav-links {
-  display: flex;
-  gap: 24px;
-}
-
-.nav-link {
-  color: #333;
-  text-decoration: none;
-  font-weight: 500;
-  transition: color 0.2s;
-}
-
-.nav-link:hover {
-  color: #ff0211;
-}
-
-.nav-button {
-  background: transparent;
-  border: none;
-  padding: 0;
-  font: inherit;
-  cursor: pointer;
-}
-
-/* Main Content */
-.main-content {
-  max-width: 1200px;
-  margin: 0 auto;
-  padding: 0 20px;
-}
-
-/* Hero Section */
 .hero {
-  background: linear-gradient(135deg, #ff0211 0%, #ff4d6d 100%);
-  color: white;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  color: #fff;
   padding: 60px 0;
   text-align: center;
   margin-bottom: 40px;
@@ -237,29 +222,12 @@ onBeforeUnmount(() => {
   margin-top: 20px;
 }
 
-.hero-title {
-  font-size: 2.5rem;
-  font-weight: bold;
-  margin-bottom: 16px;
-}
-
-.hero-subtitle {
-  font-size: 1.2rem;
-  margin-bottom: 32px;
-  opacity: 0.9;
-}
-
-.search-container {
-  max-width: 600px;
-  margin: 0 auto;
-}
-
 .search-box {
   display: flex;
-  background: white;
+  background: var(--card);
   border-radius: 8px;
   overflow: hidden;
-  box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.1);
 }
 
 .search-input {
@@ -267,84 +235,30 @@ onBeforeUnmount(() => {
   padding: 16px 20px;
   border: none;
   font-size: 16px;
-  color: #333;
-}
-
-.search-input:focus {
-  outline: none;
+  color: var(--text);
 }
 
 .search-btn {
-  background: #ff0211;
-  color: white;
+  background: var(--primary);
+  color: #fff;
   border: none;
   padding: 16px 32px;
   font-size: 16px;
   font-weight: 600;
   cursor: pointer;
-  transition: background 0.2s;
 }
 
-.search-btn:hover {
-  background: #d4000f;
-}
-
-/* Categories Section */
-.categories {
-  margin-bottom: 60px;
-}
-
-.section-title {
-  font-size: 1.5rem;
-  font-weight: bold;
-  margin-bottom: 24px;
-  color: #333;
-}
-
-.category-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-  gap: 20px;
-}
-
-.category-item {
+.section-title-row {
   display: flex;
-  flex-direction: column;
+  justify-content: space-between;
   align-items: center;
-  padding: 20px;
-  background: white;
-  border-radius: 12px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  transition: transform 0.2s;
+}
+
+.section-action {
+  border: none;
+  background: transparent;
+  color: var(--primary);
   cursor: pointer;
-}
-
-.category-item:hover {
-  transform: translateY(-2px);
-}
-
-.category-icon {
-  width: 60px;
-  height: 60px;
-  margin-bottom: 12px;
-}
-
-.category-icon img {
-  width: 100%;
-  height: 100%;
-  border-radius: 50%;
-}
-
-.category-name {
-  font-size: 14px;
-  font-weight: 500;
-  color: #333;
-  text-align: center;
-}
-
-/* Featured Products */
-.featured-products {
-  margin-bottom: 60px;
 }
 
 .product-grid {
@@ -354,28 +268,163 @@ onBeforeUnmount(() => {
 }
 
 .product-card {
-  background: white;
+  background: var(--card);
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-  transition: transform 0.2s;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.1);
   cursor: pointer;
 }
 
-.product-card:hover {
-  transform: translateY(-4px);
+.product-price {
+  color: var(--primary);
+  font-weight: 700;
+}
+
+.product-location {
+  color: var(--muted);
+}
+
+.footer {
+  background: var(--card);
+  color: var(--muted);
+  padding: 40px 0;
+  text-align: center;
+  border-top: 1px solid var(--border);
+  margin-top: 60px;
+}
+
+.modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(31, 35, 40, 0.6);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 40px 16px;
+  z-index: 130;
+}
+
+.modal-content {
+  width: min(920px, 100%);
+  background: var(--card);
+  border-radius: 18px;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.modal-close {
+  position: absolute;
+  top: 12px;
+  right: 16px;
+  border: none;
+  background: transparent;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: var(--muted);
+}
+
+.modal-action {
+  border: none;
+  background: var(--primary);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  text-decoration: none;
+}
+
+.error {
+  color: #d93025;
+  margin-top: 12px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.main-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.hero-content {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.hero-title {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.hero-subtitle {
+  font-size: 1.25rem;
+  margin-bottom: 32px;
+  opacity: 0.95;
+}
+
+.search-container {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.search-input:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(233, 84, 32, 0.1);
+}
+
+.search-btn:hover:not(:disabled) {
+  background: var(--primary-hover);
+}
+
+.search-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.featured-products {
+  margin-top: 40px;
+  margin-bottom: 60px;
+}
+
+.section-title {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 24px;
+}
+
+.section-action:hover:not(:disabled) {
+  text-decoration: underline;
+}
+
+.section-action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .product-image {
   width: 100%;
-  height: 200px;
+  aspect-ratio: 1;
   overflow: hidden;
+  background: var(--bg);
 }
 
 .product-image img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 0.3s ease;
+}
+
+.product-card:hover .product-image img {
+  transform: scale(1.05);
 }
 
 .product-info {
@@ -383,148 +432,135 @@ onBeforeUnmount(() => {
 }
 
 .product-name {
-  font-size: 16px;
+  font-size: 1rem;
   font-weight: 500;
-  color: #333;
   margin-bottom: 8px;
-  line-height: 1.4;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   line-clamp: 2;
   -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.product-price {
-  font-size: 18px;
-  font-weight: bold;
-  color: #ff0211;
-  margin-bottom: 8px;
 }
 
 .product-meta {
   display: flex;
-  justify-content: space-between;
-  font-size: 12px;
-  color: #666;
+  gap: 8px;
+  font-size: 0.875rem;
+  margin-top: 8px;
 }
 
-/* Banner Section */
-.banner {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
+.product-status {
+  color: var(--muted);
+}
+
+.empty-message {
+  text-align: center;
+  color: var(--muted);
+  padding: 60px 20px;
+  font-size: 1.125rem;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  color: var(--text);
+  font-weight: 700;
+  font-size: 1.125rem;
+}
+
+.logo {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+
+.modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
   padding: 40px;
+}
+
+.modal-image {
+  width: 100%;
+  max-height: 400px;
+  overflow: hidden;
   border-radius: 12px;
-  text-align: center;
-  margin-bottom: 40px;
 }
 
-.banner-content h3 {
-  font-size: 1.8rem;
-  font-weight: bold;
-  margin-bottom: 12px;
+.modal-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
 }
 
-.banner-content p {
-  font-size: 1.1rem;
-  margin-bottom: 24px;
-  opacity: 0.9;
+.modal-info {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
 }
 
-.cta-button {
-  background: white;
-  color: #667eea;
-  border: none;
-  padding: 16px 32px;
-  border-radius: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: transform 0.2s;
+.modal-info h3 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
 }
 
-.cta-button:hover {
-  transform: translateY(-2px);
+.modal-price {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: var(--primary);
 }
 
-/* Footer */
-.footer {
-  background: #333;
-  color: white;
-  padding: 40px 0;
-  text-align: center;
-  margin-top: 60px;
-}
-
-.footer-content p {
+.modal-meta {
+  list-style: none;
+  padding: 0;
   margin: 0;
-  opacity: 0.8;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--muted);
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-  .nav-container {
-    padding: 0 16px;
-    height: 56px;
+.modal-meta li {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.modal-action:hover {
+  background: var(--primary-hover);
+}
+
+.modal-enter-active,
+.modal-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.modal-enter-from,
+.modal-leave-to {
+  opacity: 0;
+}
+
+.footer-content {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+@media (min-width: 768px) {
+  .modal-body {
+    flex-direction: row;
   }
   
-  .nav-links {
-    gap: 16px;
+  .modal-image {
+    flex: 0 0 50%;
   }
   
-  .nav-link {
-    font-size: 14px;
-  }
-  
-  .hero {
-    padding: 40px 20px;
-  }
-  
-  .hero-title {
-    font-size: 2rem;
-  }
-  
-  .hero-subtitle {
-    font-size: 1rem;
-  }
-  
-  .search-box {
-    flex-direction: column;
-  }
-  
-  .search-btn {
-    border-radius: 0 0 8px 8px;
-  }
-  
-  .category-grid {
-    grid-template-columns: repeat(4, 1fr);
-    gap: 12px;
-  }
-  
-  .category-item {
-    padding: 12px;
-  }
-  
-  .category-icon {
-    width: 40px;
-    height: 40px;
-  }
-  
-  .category-name {
-    font-size: 12px;
-  }
-  
-  .product-grid {
-    grid-template-columns: repeat(2, 1fr);
-    gap: 16px;
-  }
-  
-  .banner {
-    padding: 30px 20px;
-  }
-  
-  .banner-content h3 {
-    font-size: 1.5rem;
+  .modal-info {
+    flex: 1;
   }
 }
 </style> 

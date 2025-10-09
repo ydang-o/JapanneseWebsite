@@ -24,22 +24,38 @@
 </template>
 
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import { getAuthToken, setAuthToken, setUserRole } from './api'
 
+const token = ref(getAuthToken())
 const userRole = ref('')
-const isLoggedIn = computed(() => !!(localStorage.getItem('token') || ''))
+const isLoggedIn = computed(() => !!token.value)
+
+function updateAuthState() {
+  token.value = getAuthToken()
+  try {
+    userRole.value = localStorage.getItem('userRole') || ''
+  } catch {
+    userRole.value = ''
+  }
+}
 
 function logout() {
-  try { localStorage.removeItem('token'); localStorage.removeItem('userRole') } catch {}
-  userRole.value = ''
+  setAuthToken('')
+  setUserRole('')
+  updateAuthState()
   location.hash = '#/login'
 }
 
 onMounted(() => {
-  try {
-    const cached = localStorage.getItem('userRole') || ''
-    if (cached) userRole.value = cached
-  } catch {}
+  updateAuthState()
+  window.addEventListener('storage', updateAuthState)
+  window.addEventListener('auth-state-changed', updateAuthState)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('storage', updateAuthState)
+  window.removeEventListener('auth-state-changed', updateAuthState)
 })
 </script>
 
@@ -47,11 +63,11 @@ onMounted(() => {
 .container { max-width: 960px; margin: 0 auto; padding: 16px; }
 .header { padding: 12px 0; }
 .nav { display: flex; justify-content: space-between; align-items: center; }
-.brand { display:flex; align-items:center; font-weight: 700; color: #222; text-decoration: none; }
+.brand { display:flex; align-items:center; font-weight: 700; color: var(--text); text-decoration: none; }
 .logo { width: 28px; height: 28px; object-fit: contain; }
 .links { display: flex; gap: 12px; }
-.link { color: #333; text-decoration: none; }
-.link:hover { text-decoration: underline; }
+.link { color: var(--text); text-decoration: none; opacity: 0.9; }
+.link:hover { text-decoration: underline; opacity: 1; }
 .main { padding: 16px 0; }
-.footer { color: #666; font-size: 12px; padding-top: 16px; border-top: 1px solid #eee; }
+.footer { color: var(--muted); font-size: 12px; padding-top: 16px; border-top: 1px solid var(--border); }
 </style> 

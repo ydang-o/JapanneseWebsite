@@ -5,6 +5,8 @@ import re
 import json
 from bs4 import BeautifulSoup
 import logging
+from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -180,6 +182,24 @@ def _fetch_merch_api(path: str, limit: int):
     return []
 
 
+def _load_fallback_items(limit: Optional[int] = None):
+    """Load static fallback items from the frontend dataset."""
+    data_path = Path(current_app.root_path).parent / "frontend" / "src" / "data" / "mercari_items.json"
+    try:
+        with data_path.open("r", encoding="utf-8") as fp:
+            data = json.load(fp)
+        if not isinstance(data, list):
+            return []
+        if limit is not None and limit > 0:
+            return data[:limit]
+        return data
+    except FileNotFoundError:
+        logger.warning("Fallback items file not found: %s", data_path)
+    except Exception as exc:
+        logger.warning("Failed to load fallback items: %s", exc)
+    return []
+
+
 @home_bp.get("/feed")
 def mercari_feed():
     raw_path = request.args.get("path", "/search/")
@@ -192,110 +212,115 @@ def mercari_feed():
     if items:
         return jsonify({"items": items})
 
+    fallback_items = _load_fallback_items(limit)
+    if fallback_items:
+        return jsonify({"items": fallback_items})
+    return jsonify({"items": []})
+
+
+@home_bp.get("/items")
+def mercari_items():
+    """获取默认商品列表（别名：feed）"""
+    limit = min(int(request.args.get("limit", 24)), 60)
+    path = "/search/"
+    items = _fetch_merch_api(path, limit)
+    if items:
+        return jsonify({"items": items})
+    return jsonify({"items": []})
+
+
+@home_bp.get("/search")
+def mercari_search():
+    """搜索商品 - 直接访问 Mercari 网站"""
+    keyword = request.args.get("q", "").strip()
+    category = request.args.get("category", "").strip()
+    limit = min(int(request.args.get("limit", 24)), 60)
+    
+    if not keyword and not category:
+        return jsonify({"items": []})
+    
+    # 构建真实的 Mercari 搜索URL
+    base = current_app.config["MERCARI_BASE"]
+    search_url = f"{base}/search"
+    params = {}
+    if keyword:
+        params["keyword"] = keyword
+    if category:
+        params["category_id"] = category
+    
     try:
-        resp = requests.get(url, timeout=12, headers={
-            "User-Agent": request.headers.get("User-Agent", "Mozilla/5.0 (compatible; JP-Site/1.0)"),
-            "Accept-Language": request.headers.get("Accept-Language", "ja-JP,ja;q=0.9"),
-        })
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Referer": base,
+        }
+        resp = requests.get(search_url, params=params, timeout=15, headers=headers)
         resp.raise_for_status()
-        text = resp.text
-        soup = BeautifulSoup(text, "html.parser")
+        
+        # 解析HTML提取商品
+        soup = BeautifulSoup(resp.text, "html.parser")
         items = []
-        for a in soup.select('a'):
-            img = a.select_one('img')
-            price_node = a.find(string=re.compile(r"\d+\s*円"))
-            title = (img.get('alt') if img and img.get('alt') else a.get('aria-label') or '').strip()
-            href = a.get('href') or ''
-            src = (img.get('src') or img.get('data-src') or '') if img else ''
-            if title and price_node and href and src:
-                items.append({
-                    "title": title,
-                    "price": re.sub(r"\s+", "", price_node),
-                    "image": _to_proxy_path(base, src),
-                    "link": _to_proxy_path(base, href),
-                })
-        seen = set()
-        uniq = []
-        for it in items:
-            if it['link'] in seen:
-                continue
-            seen.add(it['link'])
-            uniq.append(it)
-
-        if not uniq:
-            next_script = soup.find('script', id='__NEXT_DATA__')
-            if next_script and (next_script.string or next_script.get_text()):
-                try:
-                    data_json = json.loads(next_script.string or next_script.get_text())
-                    extracted = _extract_products_from_json(data_json, base, limit)
-                    for it in extracted:
-                        if it['link'] in seen:
-                            continue
-                        seen.add(it['link'])
-                        uniq.append(it)
-                        if len(uniq) >= limit:
-                            break
-                except Exception as exc:
-                    logger.debug("Parsing __NEXT_DATA__ failed: %s", exc)
-
-        if not uniq:
-            for script in soup.find_all('script'):
-                content = script.string or script.get_text() or ''
-                if not content:
+        
+        # 尝试从 __NEXT_DATA__ 提取
+        next_script = soup.find('script', id='__NEXT_DATA__')
+        if next_script and next_script.string:
+            try:
+                data_json = json.loads(next_script.string)
+                extracted = _extract_products_from_json(data_json, base, limit)
+                items.extend(extracted[:limit])
+            except Exception as e:
+                logger.debug("Failed to parse __NEXT_DATA__: %s", e)
+        
+        # 如果没有足够的商品，尝试DOM解析
+        if len(items) < limit:
+            for link in soup.select('a[href*="/item/"]'):
+                if len(items) >= limit:
+                    break
+                img = link.select_one('img')
+                if not img:
                     continue
-                if 'window.__NUXT__' in content:
-                    match = re.search(r"window.__NUXT__\s*=\s*(\{.*?\})\s*;", content, flags=re.S)
-                    data_json = None
-                    if match:
-                        try:
-                            data_json = json.loads(match.group(1))
-                        except Exception as exc:
-                            logger.debug("Failed to parse __NUXT__ JSON: %s", exc)
-                            data_json = None
-                    else:
-                        data_json = None
-                elif content.strip().startswith('{') or content.strip().startswith('"{'):
-                    try:
-                        raw = content.strip()
-                        if raw.startswith('"') and raw.endswith('"'):
-                            raw = raw[1:-1]
-                            raw = raw.encode('utf-8').decode('unicode_escape')
-                        data_json = json.loads(raw)
-                    except Exception as exc:
-                        logger.debug("Failed to parse inline JSON: %s", exc)
-                        data_json = None
-                else:
-                    data_json = None
+                
+                price_elem = link.find(string=re.compile(r'¥|円|\d+,?\d*'))
+                if not price_elem:
+                    price_elem = link.select_one('[class*="price"]')
+                    if price_elem:
+                        price_elem = price_elem.get_text()
+                
+                title = img.get('alt', '') or img.get('title', '') or link.get('aria-label', '')
+                href = link.get('href', '')
+                src = img.get('src', '') or img.get('data-src', '')
+                
+                if title and href and src:
+                    price_text = str(price_elem) if price_elem else ''
+                    if price_text and not ('¥' in price_text or '円' in price_text):
+                        price_text = f"¥{price_text}"
+                    items.append({
+                        "title": title,
+                        "price": price_text,
+                        "image": _to_proxy_path(base, src),
+                        "link": _to_proxy_path(base, href),
+                    })
+                    if len(items) >= limit:
+                        break
+        
+        if len(items) < limit:
+            fallback_items = _load_fallback_items(None)
+            if fallback_items:
+                filtered = fallback_items
+                if keyword:
+                    lowered_kw = keyword.lower()
+                    filtered = [item for item in filtered if lowered_kw in (item.get("title", "") or "").lower()]
+                if category:
+                    pass
+                if filtered:
+                    return jsonify({"items": filtered[:limit]})
 
-                if data_json:
-                    extracted = _extract_products_from_json(data_json, base, limit)
-                    for it in extracted:
-                        if it['link'] in seen:
-                            continue
-                        seen.add(it['link'])
-                        uniq.append(it)
-                        if len(uniq) >= limit:
-                            break
-
-        if not uniq:
-            match = re.search(r"window.__NUXT__\s*=\s*(\{.*?\})\s*;", text, flags=re.S)
-            if match:
-                try:
-                    data_json = json.loads(match.group(1))
-                    extracted = _extract_products_from_json(data_json, base, limit)
-                    for it in extracted:
-                        if it['link'] in seen:
-                            continue
-                        seen.add(it['link'])
-                        uniq.append(it)
-                        if len(uniq) >= limit:
-                            break
-                except Exception as exc:
-                    logger.debug("Parsing NUXT from page failed: %s", exc)
-
-        return jsonify({"items": uniq[:limit]})
-    except requests.RequestException:
-        return jsonify({"error": "外部サービスに接続できません"}), 502
+        return jsonify({"items": items[:limit] if items else []})
+    
+    except Exception as e:
+        logger.error("Search failed: %s", e)
+        return jsonify({"items": [], "error": "検索に失敗しました"})
 
 
 @home_bp.get("/proxy")

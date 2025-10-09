@@ -28,7 +28,7 @@
 
 <script setup>
 import { ref } from 'vue'
-import { apiFetch } from '../api'
+import { apiFetch, setUserRole } from '../api'
 import './login.css'
 
 const phone = ref('')
@@ -69,6 +69,9 @@ async function onSubmit() {
       body: JSON.stringify({ phone: normalizeJpPhone(phone.value), password: password.value, displayName: displayName.value }),
     })
     message.value = res.message || '登録受付：審査中です'
+    if (res?.user?.role) {
+      setUserRole(res.user.role)
+    }
   } catch (e) {
     const msg = e.message || ''
     if (msg.includes('審査中')) {
