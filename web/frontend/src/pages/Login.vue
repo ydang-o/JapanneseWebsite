@@ -65,6 +65,9 @@ function formatPhone() {
 }
 
 async function importRsaPublicKey(pem) {
+  if (!pem || typeof pem !== 'string') {
+    throw new Error('公開鍵を取得できませんでした。再度お試しください。')
+  }
   // Remove PEM header/footer
   const b64 = pem.replace(/-----BEGIN PUBLIC KEY-----/, '').replace(/-----END PUBLIC KEY-----/, '').replace(/\s+/g, '')
   const raw = Uint8Array.from(atob(b64), c => c.charCodeAt(0)).buffer
@@ -88,7 +91,8 @@ async function onSubmit() {
   try {
     // 1) fetch pubkey
     const pub = await apiFetch('/auth/pubkey')
-    const key = await importRsaPublicKey(pub.pem)
+    const pem = pub?.pem
+    const key = await importRsaPublicKey(pem)
     // 2) build plaintext
     const id = isLikelyPhone(identifier.value) ? normalizeJpPhone(identifier.value) : identifier.value
     const body = JSON.stringify({ phone: id, password: password.value, ts: Date.now() })

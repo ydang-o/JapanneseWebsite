@@ -13,10 +13,12 @@
           </svg>
         </div>
         <nav class="nav-links">
-          <a href="#" class="nav-link">ホーム</a>
-          <a href="#" class="nav-link">ログイン</a>
-          <a href="#" class="nav-link">新規登録</a>
-          <a href="#" class="nav-link">マイページ</a>
+          <a href="#/" class="nav-link">ホーム</a>
+          <a v-if="isAdmin" href="#/admin" class="nav-link">管理</a>
+          <a v-if="isLoggedIn" href="#/user" class="nav-link">マイページ</a>
+          <a v-if="!isLoggedIn" href="#/login" class="nav-link">ログイン</a>
+          <a v-if="!isLoggedIn" href="#/register" class="nav-link">新規登録</a>
+          <button v-if="isLoggedIn" class="nav-link nav-button" @click="logout">ログアウト</button>
         </nav>
       </div>
     </header>
@@ -99,8 +101,9 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 import mercariItems from '@/data/mercariItems.json'
+import { getAuthToken, setAuthToken } from '@/api'
 
 // 模拟分类数据
 const categories = ref([
@@ -120,6 +123,45 @@ const featuredProducts = ref(
     statusLabel: item.status === 'on_sale' ? '販売中' : item.status
   }))
 )
+
+const isLoggedIn = ref(Boolean(getAuthToken()))
+const userRole = ref('')
+const isAdmin = computed(() => isLoggedIn.value && userRole.value === 'admin')
+
+function updateLoginState() {
+  isLoggedIn.value = Boolean(getAuthToken())
+  try {
+    userRole.value = localStorage.getItem('userRole') || ''
+  } catch {
+    userRole.value = ''
+  }
+}
+
+function handleStorage(event) {
+  if (!event.key || event.key === 'token' || event.key === 'userRole') {
+    updateLoginState()
+  }
+}
+
+function logout() {
+  setAuthToken('')
+  try {
+    localStorage.removeItem('userRole')
+    localStorage.removeItem('redirectPath')
+    localStorage.removeItem('authPrompt')
+  } catch {}
+  updateLoginState()
+  location.hash = '#/login'
+}
+
+onMounted(() => {
+  updateLoginState()
+  window.addEventListener('storage', handleStorage)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('storage', handleStorage)
+})
 </script>
 
 <style scoped>
@@ -167,6 +209,14 @@ const featuredProducts = ref(
 
 .nav-link:hover {
   color: #ff0211;
+}
+
+.nav-button {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
 }
 
 /* Main Content */

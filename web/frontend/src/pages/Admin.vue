@@ -14,6 +14,14 @@
       <p v-if="error" class="error">{{ error }}</p>
     </div>
 
+    <AdminNotice
+      :visible="notice.visible"
+      :type="notice.type"
+      :title="notice.title"
+      :description="notice.description"
+      @close="notice.visible = false"
+    />
+
     <div class="card" style="padding:12px; margin-bottom:16px">
       <h3>管理者登録（バックエンド作成）</h3>
       <div class="row">
@@ -41,12 +49,27 @@
             <td style="padding:8px">{{ u.email }}</td>
             <td style="padding:8px">{{ u.displayName }}</td>
             <td style="padding:8px"><strong>{{ u.points }}</strong></td>
-            <td style="padding:8px">{{ u.status }}</td>
+            <td style="padding:8px">{{ statusLabel(u.status) }}</td>
             <td style="padding:8px">
-              <input v-model.number="rowDelta[u.id]" type="number" placeholder="±ポイント" style="width:100px; margin-right:8px" />
-              <button @click="adjustRow(u)" :disabled="loading" style="margin-right:8px">反映</button>
-              <button @click="approve(u)" :disabled="loading" style="margin-right:8px">承認</button>
-              <button @click="reject(u)" :disabled="loading" style="background:#a00">却下</button>
+              <div class="adjust-group">
+                <input
+                  v-model.number="rowDelta[u.id]"
+                  type="number"
+                  placeholder="±ポイント"
+                  class="small-input"
+                />
+                <input
+                  v-model="rowReason[u.id]"
+                  type="text"
+                  placeholder="理由 (例: キャンペーン追加)"
+                  class="reason-input"
+                />
+              </div>
+              <div class="action-group">
+                <button @click="adjustRow(u)" :disabled="loading" class="secondary">反映</button>
+                <button @click="approve(u)" :disabled="loading" class="primary">承認</button>
+                <button @click="reject(u)" :disabled="loading" class="danger">却下</button>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -63,6 +86,7 @@
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
 import { apiFetch } from '../api'
+import AdminNotice from './components/AdminNotice.vue'
 
 const adminKey = ref('change-admin-key')
 const loading = ref(false)
@@ -74,8 +98,33 @@ const pageSize = ref(20)
 const total = ref(0)
 const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 const rowDelta = reactive({})
+const rowReason = reactive({})
 const createPhone = ref('')
 const createName = ref('')
+const notice = reactive({
+  visible: false,
+  type: 'info',
+  title: '',
+  description: '',
+})
+
+function showNotice(options) {
+  notice.visible = true
+  notice.type = options.type || 'info'
+  notice.title = options.title || ''
+  notice.description = options.description || ''
+}
+
+function hideNotice() {
+  notice.visible = false
+}
+
+function statusLabel(status) {
+  if (status === 'approved') return '承認済み'
+  if (status === 'rejected') return '却下'
+  if (status === 'pending') return '審査中'
+  return status
+}
 
 async function fetchUsers() {
   loading.value = true
@@ -156,19 +205,60 @@ async function adjustRow(u) {
   error.value = ''
   message.value = ''
   const delta = Number(rowDelta[u.id] || 0)
-  if (!delta) return
+  const reason = (rowReason[u.id] || '').trim()
+
+  if (!delta) {
+    showNotice({
+      type: 'warning',
+      title: 'ポイント数を入力してください',
+      description: '正負どちらでも構いませんが、0は設定できません。',
+    })
+    return
+  }
+
+  if (!reason) {
+    showNotice({
+      type: 'warning',
+      title: '理由を入力してください',
+      description: '操作履歴を明確にするため、理由を必ず記録してください。',
+    })
+    return
+  }
+
+  const confirmMessage = `ID ${u.id} (${u.displayName}) のポイントを ${delta > 0 ? '+' : ''}${delta} 変更します。\n理由: ${reason}\nよろしいですか？`
+  if (!window.confirm(confirmMessage)) {
+    showNotice({
+      type: 'info',
+      title: '処理をキャンセルしました',
+      description: '変更は送信されていません。',
+    })
+    return
+  }
+
   loading.value = true
+  hideNotice()
   try {
     const res = await apiFetch('/admin/points/adjust', {
       method: 'POST',
       headers: { 'X-ADMIN-KEY': adminKey.value },
-      body: JSON.stringify({ userId: u.id, delta, reason: '管理調整' }),
+      body: JSON.stringify({ userId: u.id, delta, reason }),
     })
     message.value = `ID ${u.id} 残高: ${res.balance}`
+    showNotice({
+      type: 'success',
+      title: 'ポイントを更新しました',
+      description: `${u.displayName} の残高は ${res.balance} になりました。`,
+    })
     await fetchUsers()
     rowDelta[u.id] = 0
+    rowReason[u.id] = ''
   } catch (e) {
     error.value = e.message
+    showNotice({
+      type: 'error',
+      title: 'ポイント更新に失敗しました',
+      description: e.message,
+    })
   } finally {
     loading.value = false
   }
@@ -197,4 +287,43 @@ function nextPage() { if (page.value < totalPages.value) { page.value++; fetchUs
 function reload() { fetchUsers() }
 
 onMounted(fetchUsers)
-</script> 
+</script>
+
+<style scoped>
+.adjust-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.action-group {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.small-input {
+  width: 120px;
+}
+
+.reason-input {
+  width: 100%;
+  max-width: 240px;
+}
+
+.secondary {
+  background: #f3f4f6;
+  color: #1f2328;
+}
+
+.primary {
+  background: #2563eb;
+  color: #fff;
+}
+
+.danger {
+  background: #dc2626;
+  color: #fff;
+}
+</style> 
