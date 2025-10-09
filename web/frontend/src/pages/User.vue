@@ -1,6 +1,8 @@
 <template>
   <div class="card">
-    <h2>マイページ</h2>
+    <h2 class="page-heading">
+      <span class="page-heading-jp">こんにちは：{{ displayNameText }}！</span>
+    </h2>
     <div v-if="notLoggedIn" style="padding:8px 0">
       <p>このページを見るにはログインが必要です。</p>
       <button @click="goLogin">ログインへ</button>
@@ -205,6 +207,17 @@ const notLoggedIn = ref(false)
 const isLoading = ref(true)
 const isRefreshing = ref(false)
 const showCardModal = ref(false)
+
+const displayNameText = computed(() => {
+  const rawName = data.value?.displayName?.trim()
+  if (rawName) return rawName
+  const email = data.value?.email
+  if (email) {
+    const local = email.split('@')[0]
+    if (local) return local
+  }
+  return 'ゲスト'
+})
 
 function goLogin() { location.hash = '#/login' }
 
@@ -1098,6 +1111,29 @@ onMounted(() => {
   font-weight: 600;
 }
 
+.page-heading {
+  margin-bottom: 16px;
+  color: var(--text);
+}
+
+.page-heading-jp {
+  display: inline-block;
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--primary);
+  letter-spacing: 0.05em;
+}
+
+.page-heading-jp::after {
+  content: '';
+  display: block;
+  width: 48px;
+  height: 3px;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-hover) 100%);
+  margin-top: 6px;
+  border-radius: 999px;
+}
+
 @media (max-width: 640px) {
   .profile-card,
   .history-section {
@@ -1131,17 +1167,12 @@ onMounted(() => {
     width: 100%;
   }
 
-  .card-modal-content {
-    max-height: 95vh;
-    border-radius: 16px;
+  .page-heading-jp {
+    font-size: 2rem;
   }
 
-  .card-modal-header {
-    padding: 20px;
-  }
-
-  .card-form {
-    padding: 20px;
+  .page-heading-jp::after {
+    width: 36px;
   }
 }
 </style>
