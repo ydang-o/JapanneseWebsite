@@ -11,7 +11,7 @@
 
       <form class="login-form" @submit.prevent="onSubmit">
         <div class="form-group">
-          <label for="identifier" class="form-label">電話番号（メールアドレスも可）</label>
+          <label for="identifier" class="form-label">電話番号</label>
           <input 
             id="identifier"
             v-model="identifier" 
@@ -141,7 +141,15 @@ async function onSubmit() {
   try {
     // 1) fetch pubkey
     const pub = await apiFetch('/auth/pubkey')
-    const pem = pub?.pem
+    let pem = pub?.pem
+    if (!pem && typeof pub === 'string') {
+      try {
+        const parsed = JSON.parse(pub)
+        pem = parsed?.pem
+      } catch (parseErr) {
+        throw new Error('公開鍵レスポンスの解析に失敗しました。時間をおいて再度お試しください。')
+      }
+    }
     const key = await importRsaPublicKey(pem)
     // 2) build plaintext
     const id = isLikelyPhone(identifier.value) ? normalizeJpPhone(identifier.value) : identifier.value
@@ -155,10 +163,23 @@ async function onSubmit() {
     setAuthToken(res.token)
     setUserRole(res?.user?.role || '')
     setTimeout(() => { /* simple client-side TTL awareness */ }, res.ttlMs || 0)
+    window.dispatchEvent(new CustomEvent('app-barrage', {
+      detail: {
+        text: 'ログインに成功しました。マイページへ移動します。',
+        type: 'success',
+        duration: 4500,
+      },
+    }))
     const back = redirectPath.value || '#/user'
     location.hash = back.startsWith('#') ? back : `#${back}`
   } catch (e) {
     error.value = e.message
+    window.dispatchEvent(new CustomEvent('app-barrage', {
+      detail: {
+        text: e.message || 'ログインに失敗しました。',
+        type: 'error',
+      },
+    }))
   } finally {
     loading.value = false
   }
@@ -168,17 +189,21 @@ async function onSubmit() {
 <style scoped>
 .login-container {
   min-height: 100vh;
-  background: #2c2c2c;
+  background: linear-gradient(135deg, #f5f7ff 0%, #edf2ff 100%);
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 20px;
+  padding: 32px 16px;
 }
 
 .login-content {
   width: 100%;
-  max-width: 720px;
-  padding: 40px;
+  max-width: 520px;
+  padding: 48px 56px;
+  background: #ffffff;
+  border-radius: 28px;
+  box-shadow: 0 35px 60px -25px rgba(15, 23, 42, 0.35);
+  border: 1px solid rgba(148, 163, 184, 0.2);
 }
 
 .login-header {
@@ -191,12 +216,12 @@ async function onSubmit() {
 .login-title {
   font-size: 2rem;
   font-weight: 700;
-  color: #ffffff;
+  color: #111827;
   margin: 0;
 }
 
 .register-link {
-  color: #4a9eff;
+  color: #2563eb;
   text-decoration: none;
   font-size: 0.875rem;
   font-weight: 500;
@@ -207,9 +232,9 @@ async function onSubmit() {
 }
 
 .info-message {
-  background: rgba(255, 193, 7, 0.1);
-  border: 1px solid rgba(255, 193, 7, 0.3);
-  color: #ffc107;
+  background: rgba(251, 191, 36, 0.15);
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  color: #b45309;
   padding: 12px 16px;
   border-radius: 8px;
   margin-bottom: 24px;
@@ -226,32 +251,33 @@ async function onSubmit() {
 
 .form-label {
   display: block;
-  color: #ffffff;
+  color: #1f2937;
   font-size: 0.875rem;
-  font-weight: 500;
+  font-weight: 600;
   margin-bottom: 8px;
 }
 
 .form-input {
   width: 100%;
   padding: 14px 16px;
-  background: #3a3a3a;
-  border: 1px solid #4a4a4a;
-  border-radius: 8px;
-  color: #ffffff;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  color: #0f172a;
   font-size: 1rem;
   transition: all 0.2s;
   box-sizing: border-box;
 }
 
 .form-input::placeholder {
-  color: #888;
+  color: #9ca3af;
 }
 
 .form-input:focus {
   outline: none;
-  border-color: #4a9eff;
-  background: #404040;
+  border-color: #2563eb;
+  background: #ffffff;
+  box-shadow: 0 0 0 4px rgba(37, 99, 235, 0.12);
 }
 
 .password-wrapper {
@@ -269,7 +295,7 @@ async function onSubmit() {
   transform: translateY(-50%);
   background: none;
   border: none;
-  color: #888;
+  color: #94a3b8;
   cursor: pointer;
   padding: 4px;
   display: flex;
@@ -279,7 +305,7 @@ async function onSubmit() {
 }
 
 .toggle-password:hover {
-  color: #ffffff;
+  color: #1f2937;
 }
 
 .toggle-password svg {
@@ -289,7 +315,7 @@ async function onSubmit() {
 .submit-btn {
   width: 100%;
   padding: 16px;
-  background: #e65550;
+  background: linear-gradient(135deg, #f97316, #ef4444);
   border: none;
   border-radius: 8px;
   color: #ffffff;
@@ -301,7 +327,7 @@ async function onSubmit() {
 }
 
 .submit-btn:hover:not(:disabled) {
-  background: #d44a45;
+  background: linear-gradient(135deg, #fb923c, #f87171);
 }
 
 .submit-btn:disabled {
@@ -310,9 +336,9 @@ async function onSubmit() {
 }
 
 .error-message {
-  color: #ff6b6b;
-  background: rgba(255, 107, 107, 0.1);
-  border: 1px solid rgba(255, 107, 107, 0.3);
+  color: #b91c1c;
+  background: rgba(248, 113, 113, 0.15);
+  border: 1px solid rgba(248, 113, 113, 0.35);
   padding: 12px 16px;
   border-radius: 8px;
   margin-top: 16px;
@@ -325,14 +351,14 @@ async function onSubmit() {
 }
 
 .terms-text {
-  color: #999;
+  color: #64748b;
   font-size: 0.75rem;
   line-height: 1.6;
   margin-bottom: 20px;
 }
 
 .terms-link {
-  color: #4a9eff;
+  color: #2563eb;
   text-decoration: none;
 }
 
@@ -344,7 +370,7 @@ async function onSubmit() {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: #4a9eff;
+  color: #2563eb;
   text-decoration: none;
   font-size: 0.875rem;
   font-weight: 500;
@@ -365,7 +391,7 @@ async function onSubmit() {
 
 @media (max-width: 768px) {
   .login-content {
-    padding: 24px;
+    padding: 36px 24px;
   }
 
   .login-title {
@@ -377,5 +403,10 @@ async function onSubmit() {
     align-items: flex-start;
     gap: 12px;
   }
+}
+
+.password-wrapper input::-ms-reveal,
+.password-wrapper input::-ms-clear {
+  display: none;
 }
 </style> 

@@ -26,9 +26,26 @@
       <section class="featured-products">
         <div class="section-title-row">
           <h2 class="section-title">最新の人気商品</h2>
-          <button class="section-action" type="button" @click="refreshItems" :disabled="isLoading">
-            {{ isLoading ? '読み込み中...' : '更新' }}
-          </button>
+          <div class="filter-controls">
+            <div class="filter-checkboxes">
+              <label
+                v-for="filter in FILTERS"
+                :key="filter.key"
+                class="filter-checkbox"
+              >
+                <input
+                  type="checkbox"
+                  :value="filter.key"
+                  :checked="isFilterSelected(filter.key)"
+                  @change="toggleFilter(filter.key)"
+                />
+                <span>{{ filter.label }}</span>
+              </label>
+            </div>
+            <button class="section-action" type="button" @click="refreshItems" :disabled="isLoading">
+              {{ isLoading ? '読み込み中...' : '更新' }}
+            </button>
+          </div>
         </div>
         <div class="product-grid" v-if="items.length">
           <article
@@ -56,7 +73,7 @@
 
     <footer class="footer">
       <div class="footer-content">
-        <p>&copy; 2025 代購サイト</p>
+        <p>&copy; 2025 日本の通販商品・ オ-クションの入れサポ-ト・賺入サポ-トサ-ビス</p>
       </div>
     </footer>
 
@@ -89,6 +106,13 @@ import { ref, onMounted } from 'vue'
 import fallbackItems from '@/data/mercari_items.json'
 
 const DISPLAY_COUNT = 21
+const FILTERS = [
+  { key: 'all', label: '全て', brand: null, limit: DISPLAY_COUNT },
+  { key: 'chanel', label: 'CHANEL', brand: 'Chanel', limit: 21 },
+  { key: 'louis-vuitton', label: 'Louis Vuitton', brand: 'Louis Vuitton', limit: 21 },
+  { key: 'hermes', label: 'Hermès', brand: 'Hermes', limit: 21 },
+  { key: 'gucci', label: 'Gucci', brand: 'Gucci', limit: 21 },
+]
 
 const searchQuery = ref('')
 const searchError = ref('')
@@ -96,6 +120,35 @@ const isLoading = ref(false)
 const items = ref([])
 const selectedProduct = ref(null)
 const searchInput = ref(null)
+const activeFilters = ref(['all'])
+const filterCache = ref({})
+
+function isFilterSelected(key) {
+  return activeFilters.value.includes(key)
+}
+
+function toggleFilter(key) {
+  if (key === 'all') {
+    activeFilters.value = ['all']
+    refreshItems()
+    return
+  }
+
+  const next = new Set(activeFilters.value)
+  if (next.has(key)) {
+    next.delete(key)
+  } else {
+    next.add(key)
+    next.delete('all')
+  }
+
+  if (!next.size) {
+    next.add('all')
+  }
+
+  activeFilters.value = Array.from(next)
+  refreshItems()
+}
 
 function pickRandomItems(list, count) {
   if (!Array.isArray(list) || list.length <= count) {
@@ -112,32 +165,51 @@ function pickRandomItems(list, count) {
 async function refreshItems() {
   isLoading.value = true
   searchError.value = ''
-  console.log('[Refresh] Loading items...')
-  
+
   try {
-    const resp = await fetch('/api/home/items')
-    console.log('[Refresh] Response status:', resp.status)
-    
-    if (!resp.ok) throw new Error('商品の取得に失敗しました')
-    
-    const data = await resp.json()
-    console.log('[Refresh] Received items:', data.items?.length || 0)
-    
-    const transformed = transformItems(data.items || [])
-    
-    if (!transformed.length) {
-      // 使用本地 fallback 数据
-      console.log('[Refresh] Using fallback items:', fallbackItems.length)
-      const fallbackTransformed = transformItems(fallbackItems)
+    const datasets = await Promise.all(
+      activeFilters.value.map(async (key) => {
+        const filter = FILTERS.find((f) => f.key === key)
+        if (!filter) return []
+
+        if (filter.key !== 'all' && filterCache.value[filter.key]) {
+          return filterCache.value[filter.key]
+        }
+
+        const params = new URLSearchParams()
+        if (filter.brand) params.set('brand', filter.brand)
+        params.set('limit', String(filter.limit || DISPLAY_COUNT))
+
+        try {
+          const resp = await fetch(`/api/home/items?${params.toString()}`)
+          if (!resp.ok) {
+            throw new Error(`${filter.label} の商品取得に失敗しました`)
+          }
+          const data = await resp.json()
+          const transformed = transformItems(data.items || [])
+
+          if (filter.key !== 'all') {
+            filterCache.value[filter.key] = transformed
+          }
+          return transformed
+        } catch (err) {
+          console.warn(`[Filter:${filter.label}]`, err)
+          return []
+        }
+      })
+    )
+
+    const merged = datasets.flat().filter(Boolean)
+
+    items.value = pickRandomItems(dedupeItems(merged), DISPLAY_COUNT)
+
+    if (!items.value.length) {
+      const fallbackTransformed = dedupeItems(transformItems(fallbackItems))
       items.value = pickRandomItems(fallbackTransformed, DISPLAY_COUNT)
-    } else {
-      items.value = pickRandomItems(transformed, DISPLAY_COUNT)
-      console.log('[Refresh] Displaying', items.value.length, 'items')
     }
   } catch (err) {
-    console.error('[Refresh] Error:', err, '- Using fallback data')
-    // API 失败时使用本地数据
-    const fallbackTransformed = transformItems(fallbackItems)
+    console.error('[Refresh] Error:', err)
+    const fallbackTransformed = dedupeItems(transformItems(fallbackItems))
     items.value = pickRandomItems(fallbackTransformed, DISPLAY_COUNT)
   } finally {
     isLoading.value = false
@@ -200,6 +272,19 @@ function transformItems(rawItems = []) {
   })
 }
 
+function dedupeItems(rawItems = []) {
+  const seen = new Map()
+  rawItems.forEach((item) => {
+    if (!item) return
+    const key = item.id || item.href || item.title
+    if (!key) return
+    if (!seen.has(key)) {
+      seen.set(key, item)
+    }
+  })
+  return Array.from(seen.values())
+}
+
 onMounted(() => {
   refreshItems()
   if (searchInput.value) searchInput.value.focus()
@@ -254,11 +339,59 @@ onMounted(() => {
   align-items: center;
 }
 
-.section-action {
-  border: none;
-  background: transparent;
-  color: var(--primary);
+.filter-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.filter-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.filter-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(233, 84, 32, 0.26);
+  color: var(--text);
+  font-size: 0.9rem;
   cursor: pointer;
+  transition: all 0.2s ease;
+  background: rgba(233, 84, 32, 0.05);
+}
+
+.filter-checkbox input {
+  accent-color: var(--primary);
+}
+
+.filter-checkbox:hover,
+.filter-checkbox input:checked + span {
+  border-color: var(--primary);
+  background: rgba(233, 84, 32, 0.1);
+}
+
+@media (max-width: 640px) {
+  .section-title-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .filter-controls {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .filter-checkboxes {
+    width: 100%;
+  }
 }
 
 .product-grid {
@@ -393,6 +526,19 @@ onMounted(() => {
   margin-bottom: 60px;
 }
 
+.products-layout {
+  display: grid;
+  grid-template-columns: 2fr minmax(300px, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+
+.brand-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+
 .section-title {
   font-size: 1.75rem;
   font-weight: 700;
@@ -462,6 +608,19 @@ onMounted(() => {
   font-size: 1.125rem;
 }
 
+.brand-feature {
+  background: var(--card);
+  border-radius: 16px;
+  padding: 24px;
+  border: 1px solid rgba(229, 231, 235, 0.7);
+  box-shadow: 0 18px 32px -24px rgba(15, 23, 42, 0.18);
+}
+
+.brand-description {
+  color: var(--muted);
+  margin-bottom: 16px;
+}
+
 .brand {
   display: flex;
   align-items: center;
@@ -500,9 +659,9 @@ onMounted(() => {
 .modal-info {
   display: flex;
   flex-direction: column;
-  gap: 16px;
-}
-
+    gap: 16px;
+  }
+  
 .modal-info h3 {
   font-size: 1.5rem;
   font-weight: 700;
@@ -520,7 +679,7 @@ onMounted(() => {
   padding: 0;
   margin: 0;
   display: flex;
-  flex-direction: column;
+    flex-direction: column;
   gap: 8px;
   color: var(--muted);
 }

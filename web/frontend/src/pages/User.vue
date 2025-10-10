@@ -99,79 +99,59 @@
           </div>
           <form class="card-form" @submit.prevent="submitCard">
             <div class="field-row">
-              <label for="cardholder">カード名義人 (ローマ字)</label>
+              <label for="account-name">口座名義（カタカナ）</label>
               <input
-                id="cardholder"
-                v-model="cardState.form.holder"
+                id="account-name"
+                v-model="cardState.form.accountName"
                 type="text"
-                autocomplete="cc-name"
-                placeholder="TARO YAMADA"
+                placeholder="タロウ ヤマダ"
                 :disabled="cardState.loading"
                 required
               />
             </div>
             <div class="field-row">
-              <label for="card-number">
-                カード番号
-                <span v-if="cardState.cardType" class="card-type-badge">{{ cardState.cardType }}</span>
-              </label>
+              <label for="branch-code">支店番号</label>
               <input
-                id="card-number"
-                v-model="cardState.form.number"
+                id="branch-code"
+                v-model="cardState.form.branchCode"
                 type="text"
-                autocomplete="cc-number"
                 inputmode="numeric"
-                placeholder="1234 5678 9012 3456"
+                placeholder="123"
                 :disabled="cardState.loading"
-                maxlength="19"
+                maxlength="4"
                 required
               />
             </div>
-            <div class="field-grid">
-              <div class="field-row">
-                <label for="card-exp">有効期限</label>
-                <input
-                  id="card-exp"
-                  v-model="cardState.form.exp"
-                  type="text"
-                  autocomplete="cc-exp"
-                  placeholder="MM/YY"
-                  :disabled="cardState.loading"
-                  maxlength="5"
-                  required
-                />
-              </div>
-              <div class="field-row">
-                <label for="card-cvc">セキュリティコード</label>
-                <input
-                  id="card-cvc"
-                  v-model="cardState.form.cvc"
-                  type="password"
-                  autocomplete="cc-csc"
-                  placeholder="***"
-                  :disabled="cardState.loading"
-                  maxlength="4"
-                  required
-                />
-              </div>
-            </div>
             <div class="field-row">
-              <label for="card-zip">ご請求先郵便番号</label>
+              <label for="account-number">口座番号</label>
               <input
-                id="card-zip"
-                v-model="cardState.form.zip"
+                id="account-number"
+                v-model="cardState.form.accountNumber"
                 type="text"
                 inputmode="numeric"
-                placeholder="1000001"
+                placeholder="1234567"
                 :disabled="cardState.loading"
                 maxlength="7"
+                required
+              />
+            </div>
+            <div class="field-row">
+              <label for="pin">暗証番号</label>
+              <input
+                id="pin"
+                v-model="cardState.form.pin"
+                type="password"
+                inputmode="numeric"
+                placeholder="****"
+                :disabled="cardState.loading"
+                maxlength="4"
                 required
               />
             </div>
             <div class="agreement">
               <label>
                 <input type="checkbox" v-model="cardState.form.consent" :disabled="cardState.loading" />
-                登録内容が実際の決済に利用されない疑似機能であることに同意します。
+                登録内容が実際の振込・決済に利用されない疑似機能であることに同意します。
               </label>
             </div>
             <div class="card-actions">
@@ -197,7 +177,7 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted, watch } from 'vue'
+import { computed, ref, onMounted } from 'vue'
 import { apiFetch, getAuthToken } from '../api'
 
 const data = ref(null)
@@ -274,13 +254,11 @@ const cardState = ref({
   loading: false,
   error: '',
   success: '',
-  cardType: '',
   form: {
-    holder: '',
-    number: '',
-    exp: '',
-    cvc: '',
-    zip: '',
+    accountName: '',
+    branchCode: '',
+    accountNumber: '',
+    pin: '',
     consent: false,
   },
 })
@@ -291,49 +269,8 @@ const cardStatusLabel = computed(() => {
   return '未登録'
 })
 
-function detectCardType(number) {
-  const digits = number.replace(/\D/g, '')
-  if (/^4/.test(digits)) return 'Visa'
-  if (/^5[1-5]/.test(digits)) return 'MasterCard'
-  if (/^3[47]/.test(digits)) return 'Amex'
-  if (/^35/.test(digits)) return 'JCB'
-  return ''
-}
-
-function sanitizeCardNumber(value) {
-  return value.replace(/[^0-9]/g, '').slice(0, 16)
-}
-
-function formatCardNumber(value) {
-  const digits = sanitizeCardNumber(value)
-  return digits.replace(/(\d{4})(?=\d)/g, '$1 ').trim()
-}
-
 function sanitizeNumeric(value) {
   return value.replace(/\D/g, '')
-}
-
-function luhnCheck(cardNumber) {
-  const digits = cardNumber.replace(/\D/g, '')
-  let sum = 0
-  let isEven = false
-  for (let i = digits.length - 1; i >= 0; i--) {
-    let digit = parseInt(digits[i], 10)
-    if (isEven) {
-      digit *= 2
-      if (digit > 9) digit -= 9
-    }
-    sum += digit
-    isEven = !isEven
-  }
-  return sum % 10 === 0
-}
-
-function sanitizeExp(value) {
-  return value
-    .replace(/[^0-9]/g, '')
-    .slice(0, 4)
-    .replace(/(\d{2})(\d{1,2})?/, (match, mm, yy = '') => (yy ? `${mm}/${yy}` : mm))
 }
 
 function openCardModal() {
@@ -346,11 +283,10 @@ function closeCardModal() {
 
 function resetCardForm() {
   cardState.value.form = {
-    holder: '',
-    number: '',
-    exp: '',
-    cvc: '',
-    zip: '',
+    accountName: '',
+    branchCode: '',
+    accountNumber: '',
+    pin: '',
     consent: false,
   }
   cardState.value.error = ''
@@ -358,64 +294,40 @@ function resetCardForm() {
 }
 
 function validateCardForm() {
-  const { holder, number, exp, cvc, zip, consent } = cardState.value.form
+  const { accountName, branchCode, accountNumber, pin, consent } = cardState.value.form
   
   if (!consent) {
     return '同意にチェックを入れてください。'
   }
   
-  const trimmedHolder = holder.trim()
-  if (!trimmedHolder) {
-    return 'カード名義人を入力してください。'
+  const trimmedName = accountName.trim()
+  if (!trimmedName) {
+    return '口座名義を入力してください。'
   }
-  if (!/^[A-Za-z\s]+$/.test(trimmedHolder)) {
-    return 'カード名義人はローマ字で入力してください。'
+  if (!/^[\u30A0-\u30FF\s]+$/.test(trimmedName)) {
+    return '口座名義はカタカナで入力してください。'
   }
-  if (trimmedHolder.length < 3) {
-    return 'カード名義人が短すぎます。'
-  }
-  
-  const cardDigits = sanitizeCardNumber(number)
-  if (cardDigits.length < 13) {
-    return 'カード番号は13桁以上で入力してください。'
-  }
-  if (cardDigits.length > 16) {
-    return 'カード番号は16桁以内で入力してください。'
+  if (trimmedName.length < 2) {
+    return '口座名義が短すぎます。'
   }
   
-  // Luhn check for card validation
-  if (!luhnCheck(cardDigits)) {
-    return 'カード番号が正しくありません。入力内容をご確認ください。'
+  const branchDigits = sanitizeNumeric(branchCode)
+  if (branchDigits.length < 3 || branchDigits.length > 4) {
+    return '支店番号は3桁または4桁の数字で入力してください。'
   }
-  
-  if (!/^(0[1-9]|1[0-2])\/(\d{2})$/.test(exp)) {
-    return '有効期限はMM/YY形式で入力してください（例：12/25）。'
+  cardState.value.form.branchCode = branchDigits
+
+  const accountDigits = sanitizeNumeric(accountNumber)
+  if (accountDigits.length < 6 || accountDigits.length > 10) {
+    return '口座番号は6桁以上10桁以下の数字で入力してください。'
   }
-  const [mm, yy] = exp.split('/')
-  const expMonth = Number(mm)
-  const expYear = 2000 + Number(yy)
-  if (expMonth < 1 || expMonth > 12) {
-    return '有効期限の月は01〜12で入力してください。'
+  cardState.value.form.accountNumber = accountDigits
+
+  const pinDigits = sanitizeNumeric(pin)
+  if (pinDigits.length !== 4) {
+    return '暗証番号は4桁の数字で入力してください。'
   }
-  
-  const now = new Date()
-  const currentYear = now.getFullYear()
-  const currentMonth = now.getMonth() + 1
-  if (expYear < currentYear || (expYear === currentYear && expMonth < currentMonth)) {
-    return '有効期限が切れています。'
-  }
-  if (expYear > currentYear + 20) {
-    return '有効期限が正しくありません。'
-  }
-  
-  if (!/^\d{3,4}$/.test(cvc)) {
-    return 'セキュリティコードは3桁または4桁の数字で入力してください。'
-  }
-  
-  const zipDigits = sanitizeNumeric(zip)
-  if (zipDigits.length !== 7) {
-    return '郵便番号は7桁の数字で入力してください（例：1000001）。'
-  }
+  cardState.value.form.pin = pinDigits
   
   return ''
 }
@@ -432,12 +344,10 @@ async function submitCard() {
   cardState.value.status = 'pending'
   await new Promise((resolve) => setTimeout(resolve, 1200))
   try {
-    const last4 = sanitizeCardNumber(cardState.value.form.number).slice(-4)
-    const cardTypeText = cardState.value.cardType ? ` (${cardState.value.cardType})` : ''
-    const maskedNumber = `**** **** **** ${last4}`
-    cardState.value.success = `${maskedNumber}${cardTypeText} を登録しました（デモ）。実際の決済処理には利用されません。`
+    const maskedAccount = cardState.value.form.accountNumber.slice(-4).padStart(cardState.value.form.accountNumber.length, '*')
+  cardState.value.success = `口座番号 ${maskedAccount} を登録しました（デモ）。実際の振込処理には利用されません。`
     cardState.value.status = 'bound'
-    cardState.value.form.consent = true
+  cardState.value.form.consent = true
     
     // 成功后延迟关闭模态窗口
     setTimeout(() => {
@@ -450,47 +360,6 @@ async function submitCard() {
     cardState.value.loading = false
   }
 }
-
-watch(
-  () => cardState.value.form.number,
-  (value) => {
-    const formatted = formatCardNumber(value)
-    if (formatted !== value) {
-      cardState.value.form.number = formatted
-    }
-    cardState.value.cardType = detectCardType(value)
-  }
-)
-
-watch(
-  () => cardState.value.form.exp,
-  (value) => {
-    const formatted = sanitizeExp(value)
-    if (formatted !== value) {
-      cardState.value.form.exp = formatted
-    }
-  }
-)
-
-watch(
-  () => cardState.value.form.cvc,
-  (value) => {
-    const sanitized = sanitizeNumeric(value).slice(0, 4)
-    if (sanitized !== value) {
-      cardState.value.form.cvc = sanitized
-    }
-  }
-)
-
-watch(
-  () => cardState.value.form.zip,
-  (value) => {
-    const sanitized = sanitizeNumeric(value).slice(0, 7)
-    if (sanitized !== value) {
-      cardState.value.form.zip = sanitized
-    }
-  }
-)
 
 async function loadUserPoints(options = { silent: false }) {
   const token = getAuthToken()

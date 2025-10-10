@@ -40,7 +40,7 @@
             <th style="padding:8px">表示名</th>
             <th style="padding:8px">ポイント</th>
             <th style="padding:8px">ステータス</th>
-            <th style="padding:8px; width:320px">操作</th>
+            <th style="padding:8px; width:380px">操作</th>
           </tr>
         </thead>
         <tbody>
@@ -69,6 +69,7 @@
                 <button @click="adjustRow(u)" :disabled="loading" class="secondary">反映</button>
                 <button @click="approve(u)" :disabled="loading" class="primary">承認</button>
                 <button @click="reject(u)" :disabled="loading" class="danger">却下</button>
+                <button @click="openResetModal(u)" :disabled="loading" class="warning">PWリセット</button>
               </div>
             </td>
           </tr>
@@ -80,6 +81,38 @@
         <button @click="nextPage" :disabled="page>=totalPages">次へ</button>
       </div>
     </div>
+
+    <transition name="fade">
+      <div
+        v-if="resetModal.visible"
+        class="modal-overlay"
+        @click.self="closeResetModal"
+      >
+        <div class="modal-card">
+          <h4>パスワードをリセット</h4>
+          <p class="modal-text">
+            ID {{ resetModal.user?.id }} / {{ resetModal.user?.displayName }} のパスワードを初期化します。<br />
+            確認のため管理者パスワードを入力してください。
+          </p>
+          <input
+            v-model="resetModal.password"
+            type="password"
+            class="modal-input"
+            placeholder="管理者パスワード"
+            :disabled="loading"
+          />
+          <div class="modal-actions">
+            <button class="warning" @click="submitResetPassword" :disabled="loading">
+              リセット実行
+            </button>
+            <button class="secondary" @click="closeResetModal" :disabled="loading">
+              キャンセル
+            </button>
+          </div>
+          <p class="modal-note">リセット後の初期パスワードは「123456」です。</p>
+        </div>
+      </div>
+    </transition>
   </div>
 </template>
 
@@ -106,6 +139,11 @@ const notice = reactive({
   type: 'info',
   title: '',
   description: '',
+})
+const resetModal = reactive({
+  visible: false,
+  user: null,
+  password: '',
 })
 
 function showNotice(options) {
@@ -196,6 +234,61 @@ async function reject(u) {
     await fetchUsers()
   } catch (e) {
     error.value = e.message
+  } finally {
+    loading.value = false
+  }
+}
+
+function openResetModal(u) {
+  resetModal.visible = true
+  resetModal.user = u
+  resetModal.password = ''
+}
+
+function closeResetModal() {
+  resetModal.visible = false
+  resetModal.user = null
+  resetModal.password = ''
+}
+
+async function submitResetPassword() {
+  const target = resetModal.user
+  if (!target) return
+
+  const adminPw = resetModal.password.trim()
+  if (!adminPw) {
+    showNotice({
+      type: 'warning',
+      title: '管理者パスワードが必要です',
+      description: 'パスワードリセットを実行する前に管理者パスワードを入力してください。',
+    })
+    return
+  }
+
+  loading.value = true
+  error.value = ''
+  message.value = ''
+  hideNotice()
+  try {
+    const res = await apiFetch('/admin/users/reset-password', {
+      method: 'POST',
+      headers: { 'X-ADMIN-KEY': adminKey.value },
+      body: JSON.stringify({ userId: target.id, adminPassword: adminPw }),
+    })
+    message.value = res.message
+    showNotice({
+      type: 'success',
+      title: 'パスワードをリセットしました',
+      description: `ID ${target.id} の初期パスワードは「123456」です。`,
+    })
+    closeResetModal()
+  } catch (e) {
+    error.value = e.message
+    showNotice({
+      type: 'error',
+      title: 'リセットに失敗しました',
+      description: e.message,
+    })
   } finally {
     loading.value = false
   }
@@ -325,5 +418,68 @@ onMounted(fetchUsers)
 .danger {
   background: #dc2626;
   color: #fff;
+}
+
+.warning {
+  background: #f59e0b;
+  color: #1f2328;
+}
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.35);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1000;
+}
+
+.modal-card {
+  background: #fff;
+  width: 100%;
+  max-width: 360px;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.2);
+}
+
+.modal-text {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #374151;
+  margin-top: 12px;
+}
+
+.modal-input {
+  width: 100%;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-top: 16px;
+}
+
+.modal-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+}
+
+.modal-note {
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 </style> 

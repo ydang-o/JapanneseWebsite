@@ -6,7 +6,7 @@ import json
 from bs4 import BeautifulSoup
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -200,6 +200,45 @@ def _load_fallback_items(limit: Optional[int] = None):
     return []
 
 
+def _normalize_brand_key(raw: str) -> str:
+    if not raw:
+        return ""
+    return re.sub(r"[^a-z0-9]+", "-", raw.lower())
+
+
+def _load_brand_items(brand: str, limit: Optional[int] = None) -> List[Dict[str, str]]:
+    """Load brand specific items from static dataset or fallback items filtered by keyword."""
+    if not brand:
+        return []
+
+    key = _normalize_brand_key(brand)
+    data_dir = Path(current_app.root_path).parent / "frontend" / "src" / "data" / "brands"
+    data_path = data_dir / f"{key}.json"
+
+    try:
+        with data_path.open("r", encoding="utf-8") as fp:
+            data = json.load(fp)
+        if isinstance(data, list):
+            valid_items = [item for item in data if item and isinstance(item, dict)]
+            if limit is not None and limit > 0:
+                return valid_items[:limit]
+            return valid_items
+    except FileNotFoundError:
+        logger.info("Brand dataset not found for %s, falling back to keyword filter", brand)
+    except Exception as exc:
+        logger.warning("Failed to load brand items for %s: %s", brand, exc)
+
+    fallback_items = _load_fallback_items(None)
+    if not fallback_items:
+        return []
+
+    lowered = brand.lower()
+    filtered = [item for item in fallback_items if lowered in (item.get("title", "") or "").lower()]
+    if limit is not None and limit > 0:
+        return filtered[:limit]
+    return filtered
+
+
 @home_bp.get("/feed")
 def mercari_feed():
     raw_path = request.args.get("path", "/search/")
@@ -222,10 +261,23 @@ def mercari_feed():
 def mercari_items():
     """获取默认商品列表（别名：feed）"""
     limit = min(int(request.args.get("limit", 24)), 60)
+    brand = request.args.get("brand", "").strip()
+
+    if brand:
+        items = _load_brand_items(brand, limit)
+        if items:
+            return jsonify({"items": items})
+        # fallthrough to general feed when brand not found / empty
+
     path = "/search/"
     items = _fetch_merch_api(path, limit)
     if items:
         return jsonify({"items": items})
+
+    fallback_items = _load_fallback_items(limit)
+    if fallback_items:
+        return jsonify({"items": fallback_items})
+
     return jsonify({"items": []})
 
 

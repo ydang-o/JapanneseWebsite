@@ -3,7 +3,7 @@ from ..auth import require_admin
 from ..extensions import db
 from ..models import User, PointTransaction
 from ..db_init import ensure_database_initialized
-from werkzeug.security import generate_password_hash
+from werkzeug.security import generate_password_hash, check_password_hash
 from ..phone import normalize_jp_phone
 
 admin_bp = Blueprint("admin", __name__)
@@ -63,6 +63,35 @@ def reject_user():
     user.status = "rejected"
     db.session.commit()
     return jsonify({"message": "却下しました"})
+
+
+@admin_bp.post("/users/reset-password")
+@require_admin
+def reset_user_password():
+    payload = request.get_json(silent=True) or {}
+    user_id = payload.get("userId")
+    admin_password = (payload.get("adminPassword") or "").strip()
+    if not user_id:
+        return jsonify({"error": "userId を指定してください"}), 400
+    if not admin_password:
+        return jsonify({"error": "管理者パスワードを入力してください"}), 400
+
+    user = db.session.get(User, int(user_id))
+    if not user:
+        return jsonify({"error": "ユーザーが見つかりません"}), 404
+
+    admin_account = User.query.filter_by(email="admin@local").first()
+    if not admin_account or not check_password_hash(admin_account.password_hash, admin_password):
+        return jsonify({"error": "管理者パスワードが正しくありません"}), 403
+
+    try:
+        user.password_hash = generate_password_hash("123456")
+        db.session.commit()
+    except Exception:
+        db.session.rollback()
+        raise
+
+    return jsonify({"message": "パスワードをリセットしました", "userId": user.id})
 
 
 @admin_bp.post("/users/create")
