@@ -110,14 +110,14 @@
               />
             </div>
             <div class="field-row">
-              <label for="bank-name">金融機関</label>
+              <label for="bank-name">銀行を選択</label>
               <select
                 id="bank-name"
                 v-model="cardState.form.bankName"
                 :disabled="cardState.loading"
                 required
               >
-                <option value="" disabled>金融機関を選択してください</option>
+                <option value="" disabled>ご利用の銀行を選択してください</option>
                 <option v-for="bank in bankOptions" :key="bank" :value="bank">{{ bank }}</option>
               </select>
             </div>
