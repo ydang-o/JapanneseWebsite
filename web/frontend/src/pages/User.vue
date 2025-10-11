@@ -35,7 +35,7 @@
           <div class="summary-card emphasis">
             <span class="summary-label">ポイント残高</span>
             <span class="summary-value">{{ formattedBalance }}</span>
-            <span class="summary-unit">pt</span>
+            <span class="summary-unit">円</span>
           </div>
           <div class="summary-card">
             <span class="summary-label">取引件数</span>
@@ -108,6 +108,18 @@
                 :disabled="cardState.loading"
                 required
               />
+            </div>
+            <div class="field-row">
+              <label for="bank-name">金融機関</label>
+              <select
+                id="bank-name"
+                v-model="cardState.form.bankName"
+                :disabled="cardState.loading"
+                required
+              >
+                <option value="" disabled>金融機関を選択してください</option>
+                <option v-for="bank in bankOptions" :key="bank" :value="bank">{{ bank }}</option>
+              </select>
             </div>
             <div class="field-row">
               <label for="branch-code">支店番号</label>
@@ -256,6 +268,7 @@ const cardState = ref({
   success: '',
   form: {
     accountName: '',
+    bankName: '',
     branchCode: '',
     accountNumber: '',
     pin: '',
@@ -284,6 +297,7 @@ function closeCardModal() {
 function resetCardForm() {
   cardState.value.form = {
     accountName: '',
+    bankName: '',
     branchCode: '',
     accountNumber: '',
     pin: '',
@@ -294,7 +308,7 @@ function resetCardForm() {
 }
 
 function validateCardForm() {
-  const { accountName, branchCode, accountNumber, pin, consent } = cardState.value.form
+  const { accountName, bankName, branchCode, accountNumber, pin, consent } = cardState.value.form
   
   if (!consent) {
     return '同意にチェックを入れてください。'
@@ -309,6 +323,13 @@ function validateCardForm() {
   }
   if (trimmedName.length < 2) {
     return '口座名義が短すぎます。'
+  }
+
+  if (!bankName) {
+    return '金融機関を選択してください。'
+  }
+  if (!bankOptions.includes(bankName)) {
+    return '選択した金融機関が無効です。'
   }
   
   const branchDigits = sanitizeNumeric(branchCode)
@@ -345,7 +366,8 @@ async function submitCard() {
   await new Promise((resolve) => setTimeout(resolve, 1200))
   try {
     const maskedAccount = cardState.value.form.accountNumber.slice(-4).padStart(cardState.value.form.accountNumber.length, '*')
-  cardState.value.success = `口座番号 ${maskedAccount} を登録しました（デモ）。実際の振込処理には利用されません。`
+    const bankLabel = cardState.value.form.bankName
+    cardState.value.success = `${bankLabel}の口座番号 ${maskedAccount} を登録しました（デモ）。実際の振込処理には利用されません。`
     cardState.value.status = 'bound'
   cardState.value.form.consent = true
     
@@ -407,6 +429,22 @@ function refresh() {
 onMounted(() => {
   loadUserPoints()
 })
+
+const bankOptions = [
+  '三菱UFJ銀行',
+  'イオン銀行',
+  'セブン銀行',
+  'ゆうちょ銀行',
+  'みずほ銀行',
+  'JA銀行',
+  '三井住友銀行',
+  'au銀行',
+  '横浜銀行',
+  '京葉銀行',
+  '千葉銀行',
+  '住信SBI銀行',
+  'りそな銀行',
+]
 </script> 
 
 <style scoped>
@@ -914,7 +952,8 @@ onMounted(() => {
   letter-spacing: 0.02em;
 }
 
-.field-row input {
+.field-row input,
+.field-row select {
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid var(--border);
