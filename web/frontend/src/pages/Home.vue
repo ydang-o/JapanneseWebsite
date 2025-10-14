@@ -122,6 +122,8 @@ const selectedProduct = ref(null)
 const searchInput = ref(null)
 const activeFilters = ref(['all'])
 const filterCache = ref({})
+const searchKey = ref(null)
+const keyLoading = ref(false)
 
 function isFilterSelected(key) {
   return activeFilters.value.includes(key)
@@ -217,18 +219,58 @@ async function refreshItems() {
 }
 
 function searchMercari() {
-  const keyword = searchQuery.value.trim()
-  if (!keyword) {
-    searchError.value = 'キーワードを入力してください。'
-    return
-  }
-  
-  // 直接跳转到 Mercari 搜索页面
-  const mercariSearchUrl = `https://jp.mercari.com/search?keyword=${encodeURIComponent(keyword)}`
-  window.open(mercariSearchUrl, '_blank')
-  
-  // 清空错误信息
-  searchError.value = ''
+  ;(async () => {
+    const keyword = searchQuery.value.trim()
+    if (!keyword) {
+      searchError.value = 'キーワードを入力してください。'
+      return
+    }
+
+    if (!window.crypto?.subtle) {
+      searchError.value = 'このブラウザは検索暗号化に対応していません。'
+      return
+    }
+
+    try {
+      isLoading.value = true
+      searchError.value = ''
+
+      const key = await ensureSearchKey()
+      if (!key) {
+        throw new Error('暗号鍵を取得できませんでした。')
+      }
+
+      const payload = {
+        keyword,
+        ts: Date.now(),
+        nonce: crypto.randomUUID(),
+      }
+      const encoder = new TextEncoder()
+      const encoded = encoder.encode(JSON.stringify(payload))
+      const encrypted = await crypto.subtle.encrypt({ name: 'RSA-OAEP' }, key, encoded)
+      const encryptedBytes = new Uint8Array(encrypted)
+      const t_s = arrayBufferToBase64Url(encryptedBytes)
+
+      const params = new URLSearchParams({ t_s })
+      const resp = await fetch(`/api/home/search?${params.toString()}`)
+      if (!resp.ok) {
+        const errBody = await resp.json().catch(() => ({}))
+        const msg = errBody.error || '検索に失敗しました。'
+        throw new Error(msg)
+      }
+      const data = await resp.json()
+      const transformed = transformItems(data.items || [])
+      items.value = transformed.length ? transformed : []
+      if (!transformed.length) {
+        searchError.value = '該当する商品が見つかりませんでした。'
+      }
+    } catch (error) {
+      console.error('[Search] Failed:', error)
+      searchError.value = error?.message || '検索に失敗しました。'
+    } finally {
+      isLoading.value = false
+    }
+  })()
 }
 
 function openProduct(product) {
@@ -289,6 +331,67 @@ onMounted(() => {
   refreshItems()
   if (searchInput.value) searchInput.value.focus()
 })
+
+async function ensureSearchKey() {
+  if (searchKey.value || keyLoading.value) {
+    return searchKey.value
+  }
+  try {
+    keyLoading.value = true
+    const resp = await fetch('/api/login/pubkey')
+    if (!resp.ok) {
+      throw new Error('公開鍵の取得に失敗しました。')
+    }
+    const body = await resp.json()
+    const pem = body?.pem
+    if (!pem) {
+      throw new Error('公開鍵が無効です。')
+    }
+    const binaryDer = pemToArrayBuffer(pem)
+    const imported = await crypto.subtle.importKey(
+      'spki',
+      binaryDer,
+      {
+        name: 'RSA-OAEP',
+        hash: 'SHA-256',
+      },
+      false,
+      ['encrypt']
+    )
+    searchKey.value = imported
+    return imported
+  } catch (error) {
+    console.error('[Search] Failed to ensure key:', error)
+    searchError.value = error?.message || '検索暗号化の初期化に失敗しました。'
+    return null
+  } finally {
+    keyLoading.value = false
+  }
+}
+
+function pemToArrayBuffer(pem) {
+  const base64 = pem
+    .replace('-----BEGIN PUBLIC KEY-----', '')
+    .replace('-----END PUBLIC KEY-----', '')
+    .replace(/\s+/g, '')
+  const raw = atob(base64)
+  const buffer = new ArrayBuffer(raw.length)
+  const view = new Uint8Array(buffer)
+  for (let i = 0; i < raw.length; i += 1) {
+    view[i] = raw.charCodeAt(i)
+  }
+  return buffer
+}
+
+function arrayBufferToBase64Url(buffer) {
+  let binary = ''
+  const bytes = new Uint8Array(buffer)
+  const len = bytes.byteLength
+  for (let i = 0; i < len; i += 1) {
+    binary += String.fromCharCode(bytes[i])
+  }
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
 </script>
 
 <style scoped>

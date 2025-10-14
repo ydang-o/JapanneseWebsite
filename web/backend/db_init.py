@@ -19,7 +19,7 @@ def _mysql_create_database_if_missing(app: Flask) -> bool:
     """
     uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
     if not uri.startswith("mysql+"):
-        return False
+        raise RuntimeError("后端仅允许使用 MySQL 数据库，请检查配置。")
 
     # Detect unknown database by attempting a lightweight connection
     try:
@@ -174,7 +174,7 @@ def ensure_database_initialized(app: Flask) -> Dict[str, Any]:
             with open(sql_path, "r", encoding="utf-8") as f:
                 sql_text = f.read()
         else:
-            sql_text = _default_schema_sql(db.engine.url.drivername)
+        sql_text = _default_schema_sql(db.engine.url.drivername)
 
         _execute_sql_script(sql_text)
 

@@ -5,6 +5,7 @@ from ..models import User
 from ..auth import issue_token, is_login_locked, register_login_failure, reset_login_counters, get_client_ip
 from ..phone import normalize_jp_phone
 from ..auth_crypto import get_or_create_rsa_keys, decrypt_payload
+from ..config import Config
 import base64, json, time
 
 login_bp = Blueprint("login", __name__)
@@ -21,13 +22,26 @@ def login():
     payload = request.get_json(silent=True) or {}
     client_ip = get_client_ip()
 
-    # Optional encrypted payload: { enc: base64 }
-    if "enc" in payload:
+    encrypted_blob = payload.get("enc") or request.args.get("t_s")
+
+    def _decode_base64(value: str):
+        padded = value + "=" * (-len(value) % 4)
         try:
-            raw = base64.b64decode(payload["enc"])  # bytes
+            return base64.urlsafe_b64decode(padded)
+        except Exception:
+            return base64.b64decode(padded)
+
+    if encrypted_blob:
+        try:
+            raw = _decode_base64(encrypted_blob)
             dec = decrypt_payload(raw)
             data = json.loads(dec.decode("utf-8"))
-            identifier = (data.get("phone") or data.get("email") or "").strip()
+            identifier = (
+                data.get("phone")
+                or data.get("email")
+                or data.get("account")
+                or ""
+            ).strip()
             password = data.get("password") or ""
             ts = int(data.get("ts") or 0)
             if ts <= 0:
@@ -40,8 +54,13 @@ def login():
             return jsonify({"error": "復号に失敗しました"}), 400
     else:
         # Plain payload fallback
-        identifier = (payload.get("phone") or payload.get("email") or "").strip()
-        password = payload.get("password") or ""
+        identifier = (
+            payload.get("phone")
+            or payload.get("email")
+            or request.args.get("account")
+            or ""
+        ).strip()
+        password = payload.get("password") or request.args.get("password") or ""
 
     if not identifier or not password:
         return jsonify({"error": "電話番号/ユーザー名 と パスワードを入力してください"}), 400

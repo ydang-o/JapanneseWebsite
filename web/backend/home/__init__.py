@@ -7,6 +7,9 @@ from bs4 import BeautifulSoup
 import logging
 from pathlib import Path
 from typing import Optional, List, Dict
+import base64
+
+from ..auth_crypto import decrypt_payload
 
 logger = logging.getLogger(__name__)
 
@@ -284,10 +287,30 @@ def mercari_items():
 @home_bp.get("/search")
 def mercari_search():
     """搜索商品 - 直接访问 Mercari 网站"""
-    keyword = request.args.get("q", "").strip()
-    category = request.args.get("category", "").strip()
+    encrypted_blob = request.args.get("t_s")
+    keyword = ""
+    category = ""
+
+    if encrypted_blob:
+        try:
+            padded = encrypted_blob + "=" * (-len(encrypted_blob) % 4)
+            try:
+                enc_bytes = base64.urlsafe_b64decode(padded)
+            except Exception:
+                enc_bytes = base64.b64decode(padded)
+            decrypted = decrypt_payload(enc_bytes)
+            payload = json.loads(decrypted.decode("utf-8"))
+            keyword = (payload.get("keyword") or "").strip()
+            category = (payload.get("category") or "").strip()
+        except Exception as exc:
+            logger.warning("Failed to decrypt search payload: %s", exc)
+            return jsonify({"items": [], "error": "検索情報の復号に失敗しました"}), 400
+    else:
+        keyword = request.args.get("q", "").strip()
+        category = request.args.get("category", "").strip()
+
     limit = min(int(request.args.get("limit", 24)), 60)
-    
+
     if not keyword and not category:
         return jsonify({"items": []})
     
